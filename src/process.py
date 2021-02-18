@@ -145,13 +145,13 @@ def video_process(video_path, show_video=False, include_video=True,
         if ret:
             # initialize landmarks lists
             stickman_marks = np.zeros_like(frame)
-            face_marks = np.zeros_like(frame)
 
             # Create stick man figure (pose detection)
             if stickman:
                 stickman_marks = pose_extractor.extract_pose(frame)
 
             # Combine all landmarks
+            # TODO clean this shit
             total_marks = stickman_marks
             mask = total_marks == 0
             frame = frame * mask + total_marks if include_video else total_marks

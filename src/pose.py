@@ -18,6 +18,7 @@ class PoseExtractor:
         self.pose_model.type(dtype)  # Also moves model to GPU if available
         self.pose_model.eval()
         self.dtype = dtype
+        # TODO change number of persons detected
         self.person_num = person_num
         self.box = box
         self.PERSON_LABEL = 1
@@ -67,6 +68,7 @@ class PoseExtractor:
 
         # add bounding box for each person found
         if self.box:
+            # TODO  add detection of racket and ball
             # Marking every person found in the image with high score
             for box, label, score in zip(p[0]['boxes'][:self.person_num], p[0]['labels'], p[0]['scores']):
                 if label == self.PERSON_LABEL and score > self.SCORE_MIN:
