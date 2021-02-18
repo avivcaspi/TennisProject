@@ -1,3 +1,4 @@
+import cv2
 
 
 class CourtDetector:
@@ -6,3 +7,6 @@ class CourtDetector:
 
     def detect(self, frame):
         return
+
+
+cv2.imread('../images/img1.jpg')
