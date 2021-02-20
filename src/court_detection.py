@@ -4,21 +4,46 @@ from matplotlib import pyplot as plt
 from sympy import Point, Line
 
 
+def build_court_reference():
+    court = np.zeros((2408,1127), dtype=np.int)
+    cv2.line(court, (10, 10), (1107, 10), 1, 2)
+    cv2.line(court, (10, 2388), (1107, 2388), 1, 2)
+    cv2.line(court, (10, 1199), (1107, 1199), 1, 2)
+    cv2.line(court, (147, 559), (970, 559), 1, 2)
+    cv2.line(court, (147, 1839), (970, 1839), 1, 2)
+    cv2.line(court, (10, 10), (10, 2388), 1, 2)
+    cv2.line(court, (1107, 10), (1107, 2388), 1, 2)
+    cv2.line(court, (147, 10), (147, 2388), 1, 2)
+    cv2.line(court, (970, 10), (970, 2388), 1, 2)
+    cv2.line(court, (558, 559), (558, 1839), 1, 2)
+    plt.imsave('court_reference.png', court, cmap='gray')
+
+
 class CourtDetector:
     def __init__(self):
         self.colour_threshold = 200
         self.dist_tau = 3
         self.intensity_threshold = 40
+        self.court_conf = {1: [(10, 10), (1107, 10), (10, 2388), (1107, 2388)],
+                           2: [(147, 10), (970, 10), (147, 2388), (970, 2388)],
+                           3: [(147, 10), (1107, 10), (147, 2388), (1107, 2388)],
+                           4: [(10, 10), (970, 10), (10, 2388), (970, 2388)],
+                           5: [(147, 559), (970, 559), (147, 1839), (970, 1839)],
+                           6: [(147, 559), (970, 559), (147, 2388), (970, 2388)],
+                           7: [(147, 10), (970, 10), (147, 1839), (970, 1839)],
+                           8: [(970, 10), (1107, 10), (970, 2388), (1107, 2388)],
+                           9: [(10, 10), (147, 10), (10, 2388), (147, 2388)],
+                           10: [(147, 559), (558, 559), (147, 1839), (558, 1839)],
+                           11: [(558, 559), (970, 559), (558, 1839), (970, 1839)]}
 
     def detect(self, frame):
         gray = self._threshold(frame)
-        cv2.imwrite('before_filtering.png', gray)
 
         gray = self._filter_pixels(gray)
-        cv2.imwrite('after_filtering.png', gray)
 
-        self._detect_lines(gray)
+        horizontal_lines, vertical_lines = self._detect_lines(gray)
 
+        self._find_homography(horizontal_lines, vertical_lines)
 
     def _threshold(self, frame):
         self.frame = frame
@@ -50,26 +75,26 @@ class CourtDetector:
         horizontal, vertical = self._classify_lines(lines)
 
         horizontal, vertical = self._merge_lines(horizontal, vertical)
-
-        cv2.line(self.frame, (int(len(gray[0]) * 4 / 7), 0), (int(len(gray[0]) * 4 / 7), 719), (255,255,0),2)
-        cv2.line(self.frame, (int(len(gray[0]) * 3 / 7), 0), (int(len(gray[0]) * 3 / 7), 719), (255, 255, 0), 2)
+        frame = self.frame.copy()
+        cv2.line(frame, (int(len(gray[0]) * 4 / 7), 0), (int(len(gray[0]) * 4 / 7), 719), (255,255,0),2)
+        cv2.line(frame, (int(len(gray[0]) * 3 / 7), 0), (int(len(gray[0]) * 3 / 7), 719), (255, 255, 0), 2)
         for line in horizontal:
             for x1, y1, x2, y2 in line:
-                cv2.line(self.frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.circle(self.frame, (x1, y1), 1, (255, 0, 0), 2)
-                cv2.circle(self.frame, (x2, y2), 1, (255, 0, 0), 2)
+                cv2.line(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.circle(frame, (x1, y1), 1, (255, 0, 0), 2)
+                cv2.circle(frame, (x2, y2), 1, (255, 0, 0), 2)
 
         for line in vertical:
             for x1, y1, x2, y2 in line:
-                cv2.line(self.frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                cv2.circle(self.frame, (x1, y1), 1, (255, 0, 0), 2)
-                cv2.circle(self.frame, (x2, y2), 1, (255, 0, 0), 2)
+                cv2.line(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                cv2.circle(frame, (x1, y1), 1, (255, 0, 0), 2)
+                cv2.circle(frame, (x2, y2), 1, (255, 0, 0), 2)
 
-        cv2.imshow('court', self.frame)
+        cv2.imshow('court', frame)
         if cv2.waitKey(0) & 0xff == 27:
             cv2.destroyAllWindows()
-        cv2.imwrite('houghlines5.jpg', self.frame)
-        return gray
+        cv2.imwrite('houghlines5.jpg', frame)
+        return horizontal, vertical
 
     def _classify_lines(self, lines):
         horizontal = []
@@ -85,17 +110,17 @@ class CourtDetector:
                     vertical.append(line)
         return horizontal, vertical
 
-    def _classify_vertical(self, vertical_lines, width):
+    def _classify_vertical(self, vertical, width):
         vertical_lines = []
         vertical_left = []
         vertical_right = []
         right_th = width * 4 / 7
         left_th = width * 3 / 7
-        for line in vertical_lines:
+        for line in vertical:
             for x1, y1, x2, y2 in line:
                 if x1 < left_th or x2 < left_th:
                     vertical_left.append(line)
-                elif x1 > right_th or x2 >right_th:
+                elif x1 > right_th or x2 > right_th:
                     vertical_right.append(line)
                 else:
                     vertical_lines.append(line)
@@ -139,6 +164,37 @@ class CourtDetector:
                 new_vertical_lines.append(line)
         return new_horizontal_lines, new_vertical_lines
 
+    def _find_homography(self, horizontal_lines, vertical_lines):
+        h1 = horizontal_lines[0][0]
+        h2 = horizontal_lines[2][0]
+        v1 = vertical_lines[0][0]
+        v2 = vertical_lines[4][0]
+        frame = self.frame.copy()
+        cv2.line(frame, (h1[ 0], h1[1]), (h1[ 2], h1[ 3]), (0, 255, 0), 2)
+        cv2.line(frame, (h2[ 0], h2[ 1]), (h2[ 2], h2[3]), (0, 255, 0), 2)
+        cv2.line(frame, (v1[ 0], v1[ 1]), (v1[ 2], v1[ 3]) ,(0, 255, 0), 2)
+        cv2.line(frame, (v2[ 0], v2[ 1]), (v2[ 2], v2[ 3]), (0, 255, 0), 2)
+        i1 = line_intersection((tuple(h1[:2]), tuple(h1[2:])), (tuple(v1[0:2]), tuple(v1[2:])))
+        i2 = line_intersection((tuple(h1[:2]), tuple(h1[2:])), (tuple(v2[0:2]), tuple(v2[2:])))
+        i3 = line_intersection((tuple(h2[:2]), tuple(h2[2:])), (tuple(v1[0:2]), tuple(v1[2:])))
+        i4 = line_intersection((tuple(h2[:2]), tuple(h2[2:])), (tuple(v2[0:2]), tuple(v2[2:])))
+
+        intersections = [i1, i2, i3, i4]
+        intersections = sorted(intersections, key=lambda x: x[0])
+        p1, p2 = sorted(intersections[:2], key=lambda x: x[1])
+        p3, p4 = sorted(intersections[2:], key=lambda x: x[1])
+        a = p2
+        p2 = p3
+        p3 = a
+        cv2.circle(frame, p1, 2, (255, 0, 0), 2)
+        cv2.circle(frame, p2, 2, (0, 255, 0), 2)
+        cv2.circle(frame, p3, 2, (0, 0, 255), 2)
+        cv2.circle(frame, p4, 2, (255, 255, 0), 2)
+        cv2.imshow('court', frame)
+        if cv2.waitKey(0) & 0xff == 27:
+            cv2.destroyAllWindows()
+
+
 
 def line_intersection(line1, line2):
 
@@ -149,6 +205,7 @@ def line_intersection(line1, line2):
     return intersection[0].coordinates
 
 
+court_reference = cv2.cvtColor(cv2.imread('court_reference.png'), cv2.COLOR_BGR2GRAY)
 filename = '../images/img1.jpg'
 img = cv2.imread(filename)
 import time
