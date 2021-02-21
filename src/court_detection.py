@@ -2,21 +2,25 @@ import numpy as np
 import cv2
 from matplotlib import pyplot as plt
 from sympy import Point, Line
+from itertools import permutations, combinations
 
 
 def build_court_reference():
+    line_width = 5
     court = np.zeros((2408,1127), dtype=np.int)
-    cv2.line(court, (10, 10), (1107, 10), 1, 2)
-    cv2.line(court, (10, 2388), (1107, 2388), 1, 2)
-    cv2.line(court, (10, 1199), (1107, 1199), 1, 2)
-    cv2.line(court, (147, 559), (970, 559), 1, 2)
-    cv2.line(court, (147, 1839), (970, 1839), 1, 2)
-    cv2.line(court, (10, 10), (10, 2388), 1, 2)
-    cv2.line(court, (1107, 10), (1107, 2388), 1, 2)
-    cv2.line(court, (147, 10), (147, 2388), 1, 2)
-    cv2.line(court, (970, 10), (970, 2388), 1, 2)
-    cv2.line(court, (558, 559), (558, 1839), 1, 2)
+    cv2.line(court, (10, 10), (1107, 10), 1, line_width)
+    cv2.line(court, (10, 2388), (1107, 2388), 1, line_width)
+    cv2.line(court, (10, 1199), (1107, 1199), 1, line_width)
+    cv2.line(court, (147, 559), (970, 559), 1, line_width)
+    cv2.line(court, (147, 1839), (970, 1839), 1, line_width)
+    cv2.line(court, (10, 10), (10, 2388), 1, line_width)
+    cv2.line(court, (1107, 10), (1107, 2388), 1, line_width)
+    cv2.line(court, (147, 10), (147, 2388), 1, line_width)
+    cv2.line(court, (970, 10), (970, 2388), 1, line_width)
+    cv2.line(court, (558, 559), (558, 1839), 1, line_width)
     plt.imsave('court_reference.png', court, cmap='gray')
+
+#build_court_reference()
 
 
 class CourtDetector:
@@ -35,11 +39,12 @@ class CourtDetector:
                            9: [(10, 10), (147, 10), (10, 2388), (147, 2388)],
                            10: [(147, 559), (558, 559), (147, 1839), (558, 1839)],
                            11: [(558, 559), (970, 559), (558, 1839), (970, 1839)]}
+        self.court_reference = cv2.cvtColor(cv2.imread('court_reference.png'), cv2.COLOR_BGR2GRAY)
 
     def detect(self, frame):
-        gray = self._threshold(frame)
+        self.gray = self._threshold(frame)
 
-        gray = self._filter_pixels(gray)
+        gray = self._filter_pixels(self.gray)
 
         horizontal_lines, vertical_lines = self._detect_lines(gray)
 
@@ -90,9 +95,9 @@ class CourtDetector:
                 cv2.circle(frame, (x1, y1), 1, (255, 0, 0), 2)
                 cv2.circle(frame, (x2, y2), 1, (255, 0, 0), 2)
 
-        cv2.imshow('court', frame)
+        ''' cv2.imshow('court', frame)
         if cv2.waitKey(0) & 0xff == 27:
-            cv2.destroyAllWindows()
+            cv2.destroyAllWindows()'''
         cv2.imwrite('houghlines5.jpg', frame)
         return horizontal, vertical
 
@@ -165,35 +170,73 @@ class CourtDetector:
         return new_horizontal_lines, new_vertical_lines
 
     def _find_homography(self, horizontal_lines, vertical_lines):
-        h1 = horizontal_lines[0][0]
-        h2 = horizontal_lines[2][0]
-        v1 = vertical_lines[0][0]
-        v2 = vertical_lines[4][0]
-        frame = self.frame.copy()
-        cv2.line(frame, (h1[ 0], h1[1]), (h1[ 2], h1[ 3]), (0, 255, 0), 2)
-        cv2.line(frame, (h2[ 0], h2[ 1]), (h2[ 2], h2[3]), (0, 255, 0), 2)
-        cv2.line(frame, (v1[ 0], v1[ 1]), (v1[ 2], v1[ 3]) ,(0, 255, 0), 2)
-        cv2.line(frame, (v2[ 0], v2[ 1]), (v2[ 2], v2[ 3]), (0, 255, 0), 2)
-        i1 = line_intersection((tuple(h1[:2]), tuple(h1[2:])), (tuple(v1[0:2]), tuple(v1[2:])))
-        i2 = line_intersection((tuple(h1[:2]), tuple(h1[2:])), (tuple(v2[0:2]), tuple(v2[2:])))
-        i3 = line_intersection((tuple(h2[:2]), tuple(h2[2:])), (tuple(v1[0:2]), tuple(v1[2:])))
-        i4 = line_intersection((tuple(h2[:2]), tuple(h2[2:])), (tuple(v2[0:2]), tuple(v2[2:])))
+        max_score = -np.inf
+        max_mat = None
+        max_inv_mat = None
+        k = 0
+        for horizontal_pair in list(combinations(horizontal_lines, 2)):
+            for vertical_pair in list(combinations(vertical_lines, 2)):
+                h1 = horizontal_pair[0][0]
+                h2 = horizontal_pair[1][0]
+                v1 = vertical_pair[0][0]
+                v2 = vertical_pair[1][0]
+                i1 = line_intersection((tuple(h1[:2]), tuple(h1[2:])), (tuple(v1[0:2]), tuple(v1[2:])))
+                i2 = line_intersection((tuple(h1[:2]), tuple(h1[2:])), (tuple(v2[0:2]), tuple(v2[2:])))
+                i3 = line_intersection((tuple(h2[:2]), tuple(h2[2:])), (tuple(v1[0:2]), tuple(v1[2:])))
+                i4 = line_intersection((tuple(h2[:2]), tuple(h2[2:])), (tuple(v2[0:2]), tuple(v2[2:])))
 
-        intersections = [i1, i2, i3, i4]
-        intersections = sorted(intersections, key=lambda x: x[0])
-        p1, p2 = sorted(intersections[:2], key=lambda x: x[1])
-        p3, p4 = sorted(intersections[2:], key=lambda x: x[1])
-        a = p2
-        p2 = p3
-        p3 = a
-        cv2.circle(frame, p1, 2, (255, 0, 0), 2)
-        cv2.circle(frame, p2, 2, (0, 255, 0), 2)
-        cv2.circle(frame, p3, 2, (0, 0, 255), 2)
-        cv2.circle(frame, p4, 2, (255, 255, 0), 2)
-        cv2.imshow('court', frame)
+                intersections = [i1, i2, i3, i4]
+                intersections = sort_intersection_points(intersections)
+
+                for i, configuration in self.court_conf.items():
+                    matrix, _ = cv2.findHomography(np.float32(configuration), np.float32(intersections), method=0)
+                    inv_matrix = cv2.invert(matrix)[1]
+                    confi_score = self._get_confi_score(matrix)
+
+                    if max_score < confi_score:
+                        max_score = confi_score
+                        max_mat = matrix
+                        max_inv_mat = inv_matrix
+
+                    k +=1
+
+        frame = self.frame.copy()
+        court = self.add_court_overlay(frame, max_mat, (255, 0, 0))
+        print(f'Score = {max_score}')
+        cv2.imshow('court', court)
         if cv2.waitKey(0) & 0xff == 27:
             cv2.destroyAllWindows()
+        print(k)
+        '''game_warped = cv2.warpPerspective(self.frame, in_mat,
+                                          (self.court_reference.shape[1], self.court_reference.shape[0]))'''
 
+
+
+
+    def _get_confi_score(self, matrix):
+        court = cv2.warpPerspective(self.court_reference, matrix, self.frame.shape[1::-1])
+        court[court > 0] = 1
+        gray = self.gray.copy()
+        gray[gray > 0] = 1
+        correct = court * gray
+        wrong = court - correct
+        c_p = np.sum(correct)
+        w_p = np.sum(wrong)
+        return c_p - 0.5 * w_p
+
+    def add_court_overlay(self, frame, homography, overlay_color=(255, 255, 255)):
+        court = cv2.warpPerspective(self.court_reference, homography, frame.shape[1::-1])
+        frame[court == 255, :] = overlay_color
+        return frame
+
+
+def sort_intersection_points(intersections):
+    y_sorted = sorted(intersections, key=lambda x: x[1])
+    p12 = y_sorted[:2]
+    p34 = y_sorted[2:]
+    p12 = sorted(p12, key=lambda x: x[0])
+    p34 = sorted(p34, key=lambda x: x[0])
+    return p12 + p34
 
 
 def line_intersection(line1, line2):
@@ -205,7 +248,7 @@ def line_intersection(line1, line2):
     return intersection[0].coordinates
 
 
-court_reference = cv2.cvtColor(cv2.imread('court_reference.png'), cv2.COLOR_BGR2GRAY)
+#court_reference = cv2.cvtColor(cv2.imread('court_reference.png'), cv2.COLOR_BGR2GRAY)
 filename = '../images/img1.jpg'
 img = cv2.imread(filename)
 import time
