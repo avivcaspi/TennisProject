@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 from matplotlib import pyplot as plt
-from sympy import Point, Line
+from sympy import Line
 from itertools import combinations
 
 
@@ -104,6 +104,7 @@ class CourtDetector:
 
     def _classify_lines(self, lines):
         # TODO find better way to classify lines
+        # TODO maybe set the 2 * dy to be dynamic
         horizontal = []
         vertical = []
         highest_vertical_y = np.inf
@@ -185,6 +186,7 @@ class CourtDetector:
         return new_horizontal_lines, new_vertical_lines
 
     def _find_homography(self, horizontal_lines, vertical_lines):
+        # TODO maybe use random sampling of lines until threshold score reached
         max_score = -np.inf
         max_mat = None
         max_inv_mat = None
@@ -301,7 +303,7 @@ def save_all_court_configurations(court_conf, court_reference):
 
 
 if __name__ == '__main__':
-    filename = '../images/img1.jpg'
+    filename = '../images/img11.jpg'
     img = cv2.imread(filename)
     import time
 
