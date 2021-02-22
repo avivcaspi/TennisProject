@@ -62,8 +62,7 @@ class CourtDetector:
         self.court_warp_matrix, self.game_warp_matrix = self._find_homography(horizontal_lines, vertical_lines)
         '''game_warped = cv2.warpPerspective(self.frame, self.game_warp_matrix,
                                           (self.court_reference.shape[1], self.court_reference.shape[0]))
-        cv2.imwrite('warped_game_.png', game_warped)
-        '''
+        cv2.imwrite('../report/warped_game_1.png', game_warped)'''
 
     def _threshold(self, frame):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -92,7 +91,7 @@ class CourtDetector:
         maxLineGap = 20
         lines = cv2.HoughLinesP(gray, 1, np.pi / 180, 80, minLineLength=minLineLength, maxLineGap=maxLineGap)
         lines = np.squeeze(lines)
-        display_lines_on_frame(self.frame.copy(), lines)
+        display_lines_on_frame(self.frame.copy(), [], lines)
 
         horizontal, vertical = self._classify_lines(lines)
         display_lines_on_frame(self.frame.copy(), horizontal, vertical)
@@ -221,8 +220,7 @@ class CourtDetector:
         if cv2.waitKey(0) & 0xff == 27:
             cv2.destroyAllWindows()
         print(k)
-        '''game_warped = cv2.warpPerspective(self.frame, in_mat,
-                                          (self.court_reference.shape[1], self.court_reference.shape[0]))'''
+
         return max_mat, max_inv_mat
 
     def _get_confi_score(self, matrix):
@@ -260,8 +258,8 @@ def line_intersection(line1, line2):
 
 
 def display_lines_on_frame(frame, horizontal=(), vertical=()):
-    cv2.line(frame, (int(len(frame[0]) * 4 / 7), 0), (int(len(frame[0]) * 4 / 7), 719), (255, 255, 0), 2)
-    cv2.line(frame, (int(len(frame[0]) * 3 / 7), 0), (int(len(frame[0]) * 3 / 7), 719), (255, 255, 0), 2)
+    '''cv2.line(frame, (int(len(frame[0]) * 4 / 7), 0), (int(len(frame[0]) * 4 / 7), 719), (255, 255, 0), 2)
+    cv2.line(frame, (int(len(frame[0]) * 3 / 7), 0), (int(len(frame[0]) * 3 / 7), 719), (255, 255, 0), 2)'''
     for line in horizontal:
         x1, y1, x2, y2 = line
         cv2.line(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
@@ -277,7 +275,7 @@ def display_lines_on_frame(frame, horizontal=(), vertical=()):
     cv2.imshow('court', frame)
     if cv2.waitKey(0) & 0xff == 27:
         cv2.destroyAllWindows()
-    cv2.imwrite('houghlines5.jpg', frame)
+    # cv2.imwrite('../report/t.png', frame)
     return frame
 
 
