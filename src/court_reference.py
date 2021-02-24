@@ -5,19 +5,41 @@ import matplotlib.pyplot as plt
 
 class CourtReference:
     def __init__(self):
-        self.baseline_top = ((10, 10), (1107, 10))
-        self.baseline_bottom = ((10, 2388), (1107, 2388))
-        self.net = ((10, 1199), (1107, 1199))
-        self.left_court_line = ((10, 10), (10, 2388))
-        self.right_court_line = ((1107, 10), (1107, 2388))
-        self.left_inner_line = ((147, 10), (147, 2388))
-        self.right_inner_line = ((970, 10), (970, 2388))
-        self.middle_line = ((558, 559), (558, 1839))
-        self.top_inner_line = ((147, 559), (970, 559))
-        self.bottom_inner_line = ((147, 1839), (970, 1839))
+        self.baseline_top = ((284, 559), (1391, 559))
+        self.baseline_bottom = ((284, 2937), (1391, 2937))
+        self.net = ((284, 1748), (1391, 1748))
+        self.left_court_line = ((284, 559), (284, 2937))
+        self.right_court_line = ((1391, 559), (1391, 2937))
+        self.left_inner_line = ((421, 559), (421, 2937))
+        self.right_inner_line = ((1244, 559), (1244, 2937))
+        self.middle_line = ((832, 1108), (832, 2388))
+        self.top_inner_line = ((421, 1108), (1244, 1108))
+        self.bottom_inner_line = ((421, 2388), (1244, 2388))
+
+        self.court_conf = {1: [*self.baseline_top, *self.baseline_bottom],
+                           2: [self.left_inner_line[0], self.right_inner_line[0], self.left_inner_line[1],
+                               self.right_inner_line[1]],
+                           3: [self.left_inner_line[0], self.right_court_line[0], self.left_inner_line[1],
+                               self.right_court_line[1]],
+                           4: [self.left_court_line[0], self.right_inner_line[0], self.left_court_line[1],
+                               self.right_inner_line[1]],
+                           5: [*self.top_inner_line, *self.bottom_inner_line],
+                           6: [*self.top_inner_line, self.left_inner_line[1], self.right_inner_line[1]],
+                           7: [self.left_inner_line[0], self.right_inner_line[0], *self.bottom_inner_line],
+                           8: [self.right_inner_line[0], self.right_court_line[0], self.right_inner_line[1],
+                               self.right_court_line[1]],
+                           9: [self.left_court_line[0], self.left_inner_line[0], self.left_court_line[1],
+                               self.left_inner_line[1]],
+                           10: [self.top_inner_line[0], self.middle_line[0], self.bottom_inner_line[0],
+                                self.middle_line[1]],
+                           11: [self.middle_line[0], self.top_inner_line[1], self.middle_line[1],
+                                self.bottom_inner_line[1]],
+                           12: [*self.bottom_inner_line, self.left_inner_line[1], self.right_inner_line[1]]}
         self.line_width = 5
         self.court_width = 1127
         self.court_height = 2408
+        self.top_bottom_border = 549
+        self.right_left_border = 274
         self.court = cv2.cvtColor(cv2.imread('court_configurations/court_reference.png'), cv2.COLOR_BGR2GRAY)
 
     def build_court_reference(self):
@@ -32,6 +54,9 @@ class CourtReference:
         cv2.line(court, *self.left_inner_line, 1, self.line_width)
         cv2.line(court, *self.right_inner_line, 1, self.line_width)
         cv2.line(court, *self.middle_line, 1, self.line_width)
+        court = cv2.copyMakeBorder(court, self.top_bottom_border, self.top_bottom_border, self.right_left_border,
+                                   self.right_left_border, cv2.BORDER_CONSTANT, value=0)
+
         plt.imsave('court_configurations/court_reference.png', court, cmap='gray')
         self.court = court
         return court
@@ -41,3 +66,10 @@ class CourtReference:
                  *self.left_inner_line, *self.right_inner_line, *self.middle_line,
                  *self.top_inner_line, *self.bottom_inner_line]
         return lines
+
+    def save_all_court_configurations(self):
+        for i, conf in self.court_conf.items():
+            c = cv2.cvtColor(255 - self.court, cv2.COLOR_GRAY2BGR)
+            for p in conf:
+                c = cv2.circle(c, p, 15, (0, 0, 255), 30)
+            cv2.imwrite(f'court_configurations/court_conf_{i}.png', c)

@@ -11,21 +11,7 @@ class CourtDetector:
         self.colour_threshold = 200
         self.dist_tau = 3
         self.intensity_threshold = 40
-        self.court_conf = {1: [(10, 10), (1107, 10), (10, 2388), (1107, 2388)],
-                           2: [(147, 10), (970, 10), (147, 2388), (970, 2388)],
-                           3: [(147, 10), (1107, 10), (147, 2388), (1107, 2388)],
-                           4: [(10, 10), (970, 10), (10, 2388), (970, 2388)],
-                           5: [(147, 559), (970, 559), (147, 1839), (970, 1839)],
-                           6: [(147, 559), (970, 559), (147, 2388), (970, 2388)],
-                           7: [(147, 10), (970, 10), (147, 1839), (970, 1839)],
-                           8: [(970, 10), (1107, 10), (970, 2388), (1107, 2388)],
-                           9: [(10, 10), (147, 10), (10, 2388), (147, 2388)],
-                           10: [(147, 559), (558, 559), (147, 1839), (558, 1839)],
-                           11: [(558, 559), (970, 559), (558, 1839), (970, 1839)],
-                           12: [(147, 1839), (970, 1839), (147, 2388), (970, 2388)]}
         self.court_reference = CourtReference()
-        # TODO add baseline, middle and some reference for lines in the court reference
-
         self.v_width = 0
         self.v_height = 0
         self.frame = None
@@ -198,7 +184,7 @@ class CourtDetector:
                 intersections = [i1, i2, i3, i4]
                 intersections = sort_intersection_points(intersections)
 
-                for i, configuration in self.court_conf.items():
+                for i, configuration in self.court_reference.court_conf.items():
                     matrix, _ = cv2.findHomography(np.float32(configuration), np.float32(intersections), method=0)
                     inv_matrix = cv2.invert(matrix)[1]
                     confi_score = self._get_confi_score(matrix)
@@ -249,7 +235,7 @@ class CourtDetector:
         self.middle_line = lines[28:32]
         self.top_inner_line = lines[32:36]
         self.bottom_inner_line = lines[36:40]
-        display_lines_on_frame(self.frame, [self.baseline_top, self.baseline_bottom, self.net, self.top_inner_line, self.bottom_inner_line],
+        display_lines_on_frame(self.frame.copy(), [self.baseline_top, self.baseline_bottom, self.net, self.top_inner_line, self.bottom_inner_line],
                                [self.left_court_line, self.right_court_line, self.right_inner_line, self.left_inner_line, self.middle_line])
 
 
@@ -303,14 +289,6 @@ def display_lines_and_points_on_frame(frame, lines=(), points=(), line_color=(0,
     if cv2.waitKey(0) & 0xff == 27:
         cv2.destroyAllWindows()
     return frame
-
-
-def save_all_court_configurations(court_conf, court_reference):
-    for i, conf in court_conf.items():
-        c = cv2.cvtColor(court_reference, cv2.COLOR_GRAY2BGR)
-        for p in conf:
-            c = cv2.circle(c, p, 15, (0, 0, 255), 30)
-        cv2.imwrite(f'court_configurations/court_conf_{i}.png', c)
 
 
 if __name__ == '__main__':
