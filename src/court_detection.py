@@ -3,25 +3,7 @@ import cv2
 from matplotlib import pyplot as plt
 from sympy import Line
 from itertools import combinations
-
-
-def build_court_reference():
-    line_width = 5
-    court = np.zeros((2408, 1127), dtype=np.int)
-    cv2.line(court, (10, 10), (1107, 10), 1, line_width)
-    cv2.line(court, (10, 2388), (1107, 2388), 1, line_width)
-    cv2.line(court, (10, 1199), (1107, 1199), 1, line_width)
-    cv2.line(court, (147, 559), (970, 559), 1, line_width)
-    cv2.line(court, (147, 1839), (970, 1839), 1, line_width)
-    cv2.line(court, (10, 10), (10, 2388), 1, line_width)
-    cv2.line(court, (1107, 10), (1107, 2388), 1, line_width)
-    cv2.line(court, (147, 10), (147, 2388), 1, line_width)
-    cv2.line(court, (970, 10), (970, 2388), 1, line_width)
-    cv2.line(court, (558, 559), (558, 1839), 1, line_width)
-    plt.imsave('court_configurations/court_reference.png', court, cmap='gray')
-
-
-# build_court_reference()
+from court_reference import CourtReference
 
 
 class CourtDetector:
@@ -41,14 +23,25 @@ class CourtDetector:
                            10: [(147, 559), (558, 559), (147, 1839), (558, 1839)],
                            11: [(558, 559), (970, 559), (558, 1839), (970, 1839)],
                            12: [(147, 1839), (970, 1839), (147, 2388), (970, 2388)]}
+        self.court_reference = CourtReference()
         # TODO add baseline, middle and some reference for lines in the court reference
-        self.court_reference = cv2.cvtColor(cv2.imread('court_configurations/court_reference.png'), cv2.COLOR_BGR2GRAY)
+
         self.v_width = 0
         self.v_height = 0
         self.frame = None
         self.gray = None
         self.court_warp_matrix = None
         self.game_warp_matrix = None
+        self.baseline_top = None
+        self.baseline_bottom = None
+        self.net = None
+        self.left_court_line = None
+        self.right_court_line = None
+        self.left_inner_line = None
+        self.right_inner_line = None
+        self.middle_line = None
+        self.top_inner_line = None
+        self.bottom_inner_line = None
 
     def detect(self, frame):
         self.frame = frame
@@ -60,8 +53,10 @@ class CourtDetector:
         horizontal_lines, vertical_lines = self._detect_lines(filtered)
 
         self.court_warp_matrix, self.game_warp_matrix = self._find_homography(horizontal_lines, vertical_lines)
+
+        self.find_lines_location()
         '''game_warped = cv2.warpPerspective(self.frame, self.game_warp_matrix,
-                                          (self.court_reference.shape[1], self.court_reference.shape[0]))
+                                          (self.court_reference.court.shape[1], self.court_reference.court.shape[0]))
         cv2.imwrite('../report/warped_game_1.png', game_warped)'''
 
     def _threshold(self, frame):
@@ -226,7 +221,7 @@ class CourtDetector:
         return max_mat, max_inv_mat
 
     def _get_confi_score(self, matrix):
-        court = cv2.warpPerspective(self.court_reference, matrix, self.frame.shape[1::-1])
+        court = cv2.warpPerspective(self.court_reference.court, matrix, self.frame.shape[1::-1])
         court[court > 0] = 1
         gray = self.gray.copy()
         gray[gray > 0] = 1
@@ -237,9 +232,25 @@ class CourtDetector:
         return c_p - 0.5 * w_p
 
     def add_court_overlay(self, frame, homography, overlay_color=(255, 255, 255)):
-        court = cv2.warpPerspective(self.court_reference, homography, frame.shape[1::-1])
+        court = cv2.warpPerspective(self.court_reference.court, homography, frame.shape[1::-1])
         frame[court == 255, :] = overlay_color
         return frame
+
+    def find_lines_location(self):
+        p = np.array(self.court_reference.get_important_lines(), dtype=np.float32).reshape((-1, 1, 2))
+        lines = cv2.perspectiveTransform(p, self.court_warp_matrix).reshape(-1)
+        self.baseline_top = lines[:4]
+        self.baseline_bottom = lines[4:8]
+        self.net = lines[8:12]
+        self.left_court_line = lines[12:16]
+        self.right_court_line = lines[16:20]
+        self.left_inner_line = lines[20:24]
+        self.right_inner_line = lines[24:28]
+        self.middle_line = lines[28:32]
+        self.top_inner_line = lines[32:36]
+        self.bottom_inner_line = lines[36:40]
+        display_lines_on_frame(self.frame, [self.baseline_top, self.baseline_bottom, self.net, self.top_inner_line, self.bottom_inner_line],
+                               [self.left_court_line, self.right_court_line, self.right_inner_line, self.left_inner_line, self.middle_line])
 
 
 def sort_intersection_points(intersections):
@@ -303,7 +314,7 @@ def save_all_court_configurations(court_conf, court_reference):
 
 
 if __name__ == '__main__':
-    filename = '../images/img11.jpg'
+    filename = '../images/img2.jpg'
     img = cv2.imread(filename)
     import time
 
