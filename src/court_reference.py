@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 class CourtReference:
     def __init__(self):
+        # TODO change location with regards to line width (all line needs to be inside court)
         self.baseline_top = ((284, 559), (1391, 559))
         self.baseline_bottom = ((284, 2937), (1391, 2937))
         self.net = ((284, 1748), (1391, 1748))

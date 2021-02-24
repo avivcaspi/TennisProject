@@ -7,7 +7,8 @@ from court_reference import CourtReference
 
 
 class CourtDetector:
-    def __init__(self):
+    def __init__(self, verbose=0):
+        self.verbose = verbose
         self.colour_threshold = 200
         self.dist_tau = 3
         self.intensity_threshold = 40
@@ -18,6 +19,7 @@ class CourtDetector:
         self.gray = None
         self.court_warp_matrix = None
         self.game_warp_matrix = None
+        self.court_score = 0
         self.baseline_top = None
         self.baseline_bottom = None
         self.net = None
@@ -38,7 +40,7 @@ class CourtDetector:
 
         horizontal_lines, vertical_lines = self._detect_lines(filtered)
 
-        self.court_warp_matrix, self.game_warp_matrix = self._find_homography(horizontal_lines, vertical_lines)
+        self.court_warp_matrix, self.game_warp_matrix, self.court_score = self._find_homography(horizontal_lines, vertical_lines)
 
         self.find_lines_location()
         '''game_warped = cv2.warpPerspective(self.frame, self.game_warp_matrix,
@@ -72,14 +74,16 @@ class CourtDetector:
         maxLineGap = 20
         lines = cv2.HoughLinesP(gray, 1, np.pi / 180, 80, minLineLength=minLineLength, maxLineGap=maxLineGap)
         lines = np.squeeze(lines)
-        display_lines_on_frame(self.frame.copy(), [], lines)
+        if self.verbose:
+            display_lines_on_frame(self.frame.copy(), [], lines)
 
         horizontal, vertical = self._classify_lines(lines)
-        display_lines_on_frame(self.frame.copy(), horizontal, vertical)
+        if self.verbose:
+            display_lines_on_frame(self.frame.copy(), horizontal, vertical)
 
         horizontal, vertical = self._merge_lines(horizontal, vertical)
-
-        display_lines_on_frame(self.frame.copy(), horizontal, vertical)
+        if self.verbose:
+            display_lines_on_frame(self.frame.copy(), horizontal, vertical)
 
         return horizontal, vertical
 
@@ -196,15 +200,16 @@ class CourtDetector:
 
                     k += 1
 
-        frame = self.frame.copy()
-        court = self.add_court_overlay(frame, max_mat, (255, 0, 0))
+        if self.verbose:
+            frame = self.frame.copy()
+            court = self.add_court_overlay(frame, max_mat, (255, 0, 0))
+            cv2.imshow('court', court)
+            if cv2.waitKey(0) & 0xff == 27:
+                cv2.destroyAllWindows()
         print(f'Score = {max_score}')
-        cv2.imshow('court', court)
-        if cv2.waitKey(0) & 0xff == 27:
-            cv2.destroyAllWindows()
         print(k)
 
-        return max_mat, max_inv_mat
+        return max_mat, max_inv_mat, max_score
 
     def _get_confi_score(self, matrix):
         court = cv2.warpPerspective(self.court_reference.court, matrix, self.frame.shape[1::-1])
@@ -237,8 +242,18 @@ class CourtDetector:
         self.middle_line = lines[28:32]
         self.top_inner_line = lines[32:36]
         self.bottom_inner_line = lines[36:40]
-        display_lines_on_frame(self.frame.copy(), [self.baseline_top, self.baseline_bottom, self.net, self.top_inner_line, self.bottom_inner_line],
-                               [self.left_court_line, self.right_court_line, self.right_inner_line, self.left_inner_line, self.middle_line])
+        if self.verbose:
+            display_lines_on_frame(self.frame.copy(), [self.baseline_top, self.baseline_bottom, self.net, self.top_inner_line, self.bottom_inner_line],
+                                   [self.left_court_line, self.right_court_line, self.right_inner_line, self.left_inner_line, self.middle_line])
+
+    def check_court_movement(self, frame, threshold=0):
+        if threshold == 0:
+            threshold = self.court_score * 0.6
+        self.frame = frame
+        self.gray = self._threshold(frame)
+        current_score = self._get_confi_score(self.court_warp_matrix)
+        print(f'Score diff {abs(self.court_score - current_score)}')
+        return abs(self.court_score - current_score) > threshold
 
 
 def sort_intersection_points(intersections):

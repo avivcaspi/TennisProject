@@ -99,12 +99,13 @@ def add_data_to_video(input_video, df, show_video, with_frame, output_folder,
 
 
 def video_process(video_path, show_video=False, include_video=True,
-                  stickman=True, stickman_box=True,
+                  stickman=True, stickman_box=True, court=True,
                   output_file='output', output_folder='output',
                   smoothing=True):
     """
     Takes videos of one person as input, and calculate the body pose and face landmarks, and saves them as csv files.
     Also, output a result videos with the keypoints marked.
+    :param court:
     :param video_path: str, path to the videos
     :param show_video: bool, show processed videos while processing (default = False)
     :param include_video: bool, result output videos will include the original videos as well as the
@@ -148,8 +149,11 @@ def video_process(video_path, show_video=False, include_video=True,
         if ret:
             if frame_i == 1:
                 court_detector.detect(frame)
-            else:
-                frame = court_detector.add_court_overlay(frame, overlay_color=(0,0,255))
+            if court:
+                if court_detector.check_court_movement(frame):
+                    court_detector.detect(frame)
+                frame = court_detector.add_court_overlay(frame, overlay_color=(0, 0, 255))
+
             # initialize landmarks lists
             stickman_marks = np.zeros_like(frame)
 
@@ -169,7 +173,7 @@ def video_process(video_path, show_video=False, include_video=True,
             # Output frame and save it
             if show_video:
                 cv2.imshow('frame', frame)
-            #cv2.imwrite('../report/persons_detections_1.png', frame)
+            # cv2.imwrite('../report/persons_detections_1.png', frame)
             out.write(frame)
             total_time += (time.time() - start_time)
             print('Processing frame %d/%d  FPS %04f' % (frame_i, length, frame_i / total_time), '\r', end='')
@@ -203,6 +207,6 @@ def video_process(video_path, show_video=False, include_video=True,
                           smoothing_output_file, get_stickman_line_connection())
 
 
-s= time.time()
-video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False)
+s = time.time()
+video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False, court=False)
 print(time.time() - s)
