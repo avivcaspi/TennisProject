@@ -30,6 +30,9 @@ class CourtDetector:
         self.middle_line = None
         self.top_inner_line = None
         self.bottom_inner_line = None
+        self.success_flag = False
+        self.success_accuracy = 80
+        self.success_score = 2000
 
     def detect(self, frame):
         self.frame = frame
@@ -42,6 +45,11 @@ class CourtDetector:
 
         self.court_warp_matrix, self.game_warp_matrix, self.court_score = self._find_homography(horizontal_lines, vertical_lines)
 
+        court_accuracy = self._get_court_accuracy(0)
+        if court_accuracy > self.success_accuracy and self.court_score > self.success_score:
+
+            self.success_flag = True
+        print('Court accuracy = %.2f' % court_accuracy)
         self.find_lines_location()
         '''game_warped = cv2.warpPerspective(self.frame, self.game_warp_matrix,
                                           (self.court_reference.court.shape[1], self.court_reference.court.shape[0]))
@@ -49,8 +57,7 @@ class CourtDetector:
 
     def _threshold(self, frame):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray[gray > self.colour_threshold] = 255
-        gray[gray < 255] = 0
+        gray = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)[1]
         return gray
 
     def _filter_pixels(self, gray):
@@ -243,8 +250,10 @@ class CourtDetector:
         self.top_inner_line = lines[32:36]
         self.bottom_inner_line = lines[36:40]
         if self.verbose:
-            display_lines_on_frame(self.frame.copy(), [self.baseline_top, self.baseline_bottom, self.net, self.top_inner_line, self.bottom_inner_line],
-                                   [self.left_court_line, self.right_court_line, self.right_inner_line, self.left_inner_line, self.middle_line])
+            display_lines_on_frame(self.frame.copy(), [self.baseline_top, self.baseline_bottom,
+                                                       self.net, self.top_inner_line, self.bottom_inner_line],
+                                   [self.left_court_line, self.right_court_line,
+                                    self.right_inner_line, self.left_inner_line, self.middle_line])
 
     def check_court_movement(self, frame, threshold=0):
         if threshold == 0:
@@ -254,6 +263,35 @@ class CourtDetector:
         current_score = self._get_confi_score(self.court_warp_matrix)
         print(f'Score diff {abs(self.court_score - current_score)}')
         return abs(self.court_score - current_score) > threshold
+
+    def get_warped_court(self):
+        court = cv2.warpPerspective(self.court_reference.court, self.court_warp_matrix, self.frame.shape[1::-1])
+        court[court > 0] = 1
+        return court
+
+    def _get_court_accuracy(self, verbose=0):
+        frame = self.frame.copy()
+        gray = self._threshold(frame)
+        gray[gray > 0] = 1
+        gray = cv2.dilate(gray, np.ones((9, 9), dtype=np.uint8))
+        court = self.get_warped_court()
+        total_white_pixels = sum(sum(court))
+        sub = court.copy()
+        sub[gray == 1] = 0
+        accuracy = 100 - (sum(sum(sub)) / total_white_pixels) * 100
+        if verbose:
+            plt.figure()
+            plt.subplot(1, 3, 1)
+            plt.imshow(gray, cmap='gray')
+            plt.title('Grayscale frame'), plt.xticks([]), plt.yticks([])
+            plt.subplot(1, 3, 2)
+            plt.imshow(court, cmap='gray')
+            plt.title('Projected court'), plt.xticks([]), plt.yticks([])
+            plt.subplot(1, 3, 3)
+            plt.imshow(sub, cmap='gray')
+            plt.title('Subtraction result'), plt.xticks([]), plt.yticks([])
+            plt.show()
+        return accuracy
 
 
 def sort_intersection_points(intersections):
@@ -309,11 +347,11 @@ def display_lines_and_points_on_frame(frame, lines=(), points=(), line_color=(0,
 
 
 if __name__ == '__main__':
-    filename = '../images/img2.jpg'
+    filename = '../images/img11.jpg'
     img = cv2.imread(filename)
     import time
 
     s = time.time()
-    court_detector = CourtDetector()
+    court_detector = CourtDetector(1)
     court_detector.detect(img)
     print(f'time = {time.time() - s}')
