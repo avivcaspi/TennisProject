@@ -3,7 +3,7 @@ import time
 
 import cv2
 import numpy as np
-
+from detection import DetectionModel
 from pose import PoseExtractor
 from smooth import Smooth
 from utils import get_video_properties, get_dtype, get_stickman_line_connection
@@ -118,6 +118,7 @@ def video_process(video_path, show_video=False, include_video=True,
     dtype = get_dtype()
 
     # initialize extractors
+    detection_model = DetectionModel(dtype=dtype)
     pose_extractor = PoseExtractor(person_num=1, box=stickman_box, dtype=dtype) if stickman else None
 
     # Load videos from videos path
@@ -146,19 +147,23 @@ def video_process(video_path, show_video=False, include_video=True,
             # initialize landmarks lists
             stickman_marks = np.zeros_like(frame)
 
+            # detect
+            boxes = detection_model.detect_objects(frame.copy())
+
             # Create stick man figure (pose detection)
             if stickman:
                 stickman_marks = pose_extractor.extract_pose(frame)
 
             # Combine all landmarks
             # TODO clean this shit
-            total_marks = stickman_marks
+            total_marks = stickman_marks + boxes
             mask = total_marks == 0
             frame = frame * mask + total_marks if include_video else total_marks
 
             # Output frame and save it
             if show_video:
                 cv2.imshow('frame', frame)
+            #cv2.imwrite('../report/persons_detections_1.png', frame)
             out.write(frame)
             total_time += (time.time() - start_time)
             print('Processing frame %d/%d  FPS %04f' % (frame_i, length, frame_i / total_time), '\r', end='')
@@ -175,7 +180,7 @@ def video_process(video_path, show_video=False, include_video=True,
     cv2.destroyAllWindows()
 
     # Save landmarks in csv files
-    df, df_face = None, None
+    df = None
     # Save stickman data
     if stickman:
         df = pose_extractor.save_to_csv(output_folder)
@@ -191,5 +196,6 @@ def video_process(video_path, show_video=False, include_video=True,
         add_data_to_video(video_path, df_smooth, show_video, 2, output_folder,
                           smoothing_output_file, get_stickman_line_connection())
 
-
-video_process(video_path='../videos/vid5.mp4', show_video=True)
+s= time.time()
+video_process(video_path='../videos/vid7.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False)
+print(time.time() - s)

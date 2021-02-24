@@ -2,3 +2,5 @@
 /videos/
 /.idea/
 /src/output/
+/*.docs
+/report/
