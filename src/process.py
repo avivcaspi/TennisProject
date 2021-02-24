@@ -7,6 +7,7 @@ from detection import DetectionModel
 from pose import PoseExtractor
 from smooth import Smooth
 from utils import get_video_properties, get_dtype, get_stickman_line_connection
+from court_detection import CourtDetector
 
 
 def add_data_to_video(input_video, df, show_video, with_frame, output_folder,
@@ -118,6 +119,7 @@ def video_process(video_path, show_video=False, include_video=True,
     dtype = get_dtype()
 
     # initialize extractors
+    court_detector = CourtDetector()
     detection_model = DetectionModel(dtype=dtype)
     pose_extractor = PoseExtractor(person_num=1, box=stickman_box, dtype=dtype) if stickman else None
 
@@ -144,6 +146,10 @@ def video_process(video_path, show_video=False, include_video=True,
         frame_i += 1
 
         if ret:
+            if frame_i == 1:
+                court_detector.detect(frame)
+            else:
+                frame = court_detector.add_court_overlay(frame, overlay_color=(0,0,255))
             # initialize landmarks lists
             stickman_marks = np.zeros_like(frame)
 
@@ -196,6 +202,7 @@ def video_process(video_path, show_video=False, include_video=True,
         add_data_to_video(video_path, df_smooth, show_video, 2, output_folder,
                           smoothing_output_file, get_stickman_line_connection())
 
+
 s= time.time()
-video_process(video_path='../videos/vid7.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False)
+video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False)
 print(time.time() - s)

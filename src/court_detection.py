@@ -217,9 +217,11 @@ class CourtDetector:
         w_p = np.sum(wrong)
         return c_p - 0.5 * w_p
 
-    def add_court_overlay(self, frame, homography, overlay_color=(255, 255, 255)):
+    def add_court_overlay(self, frame, homography=None, overlay_color=(255, 255, 255)):
+        if homography is None and self.court_warp_matrix is not None:
+            homography = self.court_warp_matrix
         court = cv2.warpPerspective(self.court_reference.court, homography, frame.shape[1::-1])
-        frame[court == 255, :] = overlay_color
+        frame[court > 0, :] = overlay_color
         return frame
 
     def find_lines_location(self):
