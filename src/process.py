@@ -149,6 +149,7 @@ def video_process(video_path, show_video=False, include_video=True,
         if ret:
             if frame_i == 1:
                 court_detector.detect(frame)
+                print(f'Court detection {"Success" if court_detector.success_flag else "Failed"}')
             if court:
                 if court_detector.check_court_movement(frame):
                     court_detector.detect(frame)
@@ -158,7 +159,7 @@ def video_process(video_path, show_video=False, include_video=True,
             stickman_marks = np.zeros_like(frame)
 
             # detect
-            boxes = detection_model.detect_objects(frame.copy())
+            boxes = detection_model.detect_player_1(frame.copy(), court_detector)
 
             # Create stick man figure (pose detection)
             if stickman:
@@ -173,7 +174,7 @@ def video_process(video_path, show_video=False, include_video=True,
             # Output frame and save it
             if show_video:
                 cv2.imshow('frame', frame)
-            # cv2.imwrite('../report/persons_detections_1.png', frame)
+            # cv2.imwrite('../report/persons_detections_4.png', frame)
             out.write(frame)
             total_time += (time.time() - start_time)
             print('Processing frame %d/%d  FPS %04f' % (frame_i, length, frame_i / total_time), '\r', end='')
@@ -208,5 +209,5 @@ def video_process(video_path, show_video=False, include_video=True,
 
 
 s = time.time()
-video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False, court=False)
+video_process(video_path='../videos/vid2.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False, court=False)
 print(time.time() - s)

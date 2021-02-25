@@ -72,6 +72,14 @@ class CourtReference:
                 c = cv2.circle(c, p, 15, (0, 0, 255), 30)
             cv2.imwrite(f'court_configurations/court_conf_{i}.png', c)
 
+    def get_court_mask(self, mask_type=0):
+        mask = np.ones_like(self.court)
+        if mask_type == 1:  # Bottom half court
+            mask[:self.net[0][1] - 1000, :] = 0
+        elif mask_type == 2:  # Top half court
+            mask[self.net[0][1]:, :] = 0
+        return mask
+
 
 if __name__ == '__main__':
     c = CourtReference()

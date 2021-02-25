@@ -32,7 +32,7 @@ class CourtDetector:
         self.bottom_inner_line = None
         self.success_flag = False
         self.success_accuracy = 80
-        self.success_score = 2000
+        self.success_score = 1000
 
     def detect(self, frame):
         self.frame = frame
