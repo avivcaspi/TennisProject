@@ -44,6 +44,11 @@ class BackgroundGenerator:
                             self.blocks_left -= 1
                             if self.blocks_left == 0:
                                 self.bg_generate_complete = True
+                                print(f'finished bg gen')
+                                cv2.imshow('bg', self.background)
+
+                                if cv2.waitKey(0) & 0xff == 27:
+                                    cv2.destroyAllWindows()
                                 return True
         self.last_frame = frame
         return False

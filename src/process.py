@@ -8,6 +8,7 @@ from pose import PoseExtractor
 from smooth import Smooth
 from utils import get_video_properties, get_dtype, get_stickman_line_connection
 from court_detection import CourtDetector
+from background_generation import BackgroundGenerator
 
 
 def add_data_to_video(input_video, df, show_video, with_frame, output_folder,
@@ -141,6 +142,7 @@ def video_process(video_path, show_video=False, include_video=True,
 
     # initialize extractors
     court_detector = CourtDetector()
+    bg_generator = BackgroundGenerator()
     detection_model = DetectionModel(dtype=dtype)
     pose_extractor = PoseExtractor(person_num=1, box=stickman_box, dtype=dtype) if stickman else None
 
@@ -159,7 +161,8 @@ def video_process(video_path, show_video=False, include_video=True,
 
     # time counter
     total_time = 0
-
+    flag = True
+    flag2 = True
     # Loop over all frames in the videos
     while True:
         start_time = time.time()
@@ -174,7 +177,36 @@ def video_process(video_path, show_video=False, include_video=True,
                 if court_detector.check_court_movement(frame):
                     court_detector.detect(frame)
                 frame = court_detector.add_court_overlay(frame, overlay_color=(0, 0, 255))
+            if not bg_generator.bg_generate_complete:
+                bg_generator.generate_bg(frame)
+                continue
+            if flag2:
+                video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                flag2 = False
+                frame_i = 1
+                continue
+            if flag:
+                white_ref = court_detector.court_reference.get_court_mask(1)
+                white_mask = cv2.warpPerspective(white_ref, court_detector.court_warp_matrix, frame.shape[1::-1])
+                diff = abs(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) - bg_generator.background)
 
+                diff[white_mask == 0] = 0
+                cleaned = cv2.threshold(diff, 30, 255, cv2.THRESH_BINARY)[1]
+                # Find contours
+                contours, hierarchy = cv2.findContours(cleaned, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+                # Draw contours
+                drawing = np.zeros((cleaned.shape[0], cleaned.shape[1], 3), dtype=np.uint8)
+
+                max_contour = max(contours, key=lambda x: cv2.contourArea(x))
+                color = (0,0,255)
+                cv2.drawContours(drawing, [max_contour], 0, color, 2, cv2.LINE_8, hierarchy, 0)
+                rect = cv2.boundingRect(max_contour)
+                x, y, w, h = rect
+                cv2.rectangle(drawing, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                s = frame.copy()
+                s[y-100: y + h + 100, x - 100: x+w+100] = 0
+                frame -= s
+                flag = False
             # initialize landmarks lists
             stickman_marks = np.zeros_like(frame)
 
@@ -229,6 +261,6 @@ def video_process(video_path, show_video=False, include_video=True,
 
 
 s = time.time()
-video_process(video_path='../videos/vid5.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
+video_process(video_path='../videos/vid20.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
               court=False)
 print(time.time() - s)
