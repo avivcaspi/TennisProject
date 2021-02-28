@@ -4,6 +4,7 @@ from matplotlib import pyplot as plt
 from sympy import Line
 from itertools import combinations
 from court_reference import CourtReference
+import scipy.signal as sp
 
 
 class CourtDetector:
@@ -33,6 +34,9 @@ class CourtDetector:
         self.success_flag = False
         self.success_accuracy = 80
         self.success_score = 1000
+        self.best_conf = None
+        self.frame_points = None
+        self.affine_mat = np.array([[1, 0, 0], [0, 1, 0]], dtype=np.float)
 
     def detect(self, frame):
         self.frame = frame
@@ -43,11 +47,11 @@ class CourtDetector:
 
         horizontal_lines, vertical_lines = self._detect_lines(filtered)
 
-        self.court_warp_matrix, self.game_warp_matrix, self.court_score = self._find_homography(horizontal_lines, vertical_lines)
+        self.court_warp_matrix, self.game_warp_matrix, self.court_score = self._find_homography(horizontal_lines,
+                                                                                                vertical_lines)
 
         court_accuracy = self._get_court_accuracy(0)
         if court_accuracy > self.success_accuracy and self.court_score > self.success_score:
-
             self.success_flag = True
         print('Court accuracy = %.2f' % court_accuracy)
         self.find_lines_location()
@@ -204,6 +208,7 @@ class CourtDetector:
                         max_score = confi_score
                         max_mat = matrix
                         max_inv_mat = inv_matrix
+                        self.best_conf = i
 
                     k += 1
 
@@ -292,6 +297,62 @@ class CourtDetector:
             plt.title('Subtraction result'), plt.xticks([]), plt.yticks([])
             plt.show()
         return accuracy
+
+    def track_court(self, frame):
+        frame = cv2.warpAffine(frame, self.affine_mat, frame.shape[1::-1])
+        last_frame = cv2.cvtColor(self.frame.copy(), cv2.COLOR_BGR2GRAY) / 255
+        last_frame -= last_frame.mean()
+        current_frame = cv2.cvtColor(frame.copy(), cv2.COLOR_BGR2GRAY) / 255
+        current_frame -= current_frame.mean()
+
+        if self.frame_points is None:
+            ps = self.court_reference.court_conf[1] + self.court_reference.court_conf[2] + \
+                 self.court_reference.court_conf[5]
+            court_reference_points = np.array(ps, dtype=np.float32).reshape((-1, 1, 2))
+            self.frame_points = cv2.perspectiveTransform(court_reference_points,
+                                                         self.court_warp_matrix).squeeze().round()
+
+        desc_margin = 20
+        new_points = []
+        for p in self.frame_points:
+            p = (round(p[0]), round(p[1]))
+            # print(p)
+            desc = last_frame[p[1] - desc_margin: p[1] + desc_margin, p[0] - desc_margin: p[0] + desc_margin].copy()
+            desc -= desc.mean()
+            patch = current_frame[p[1] - 3 * desc_margin: p[1] + 3 * desc_margin,
+                    p[0] - 3 * desc_margin: p[0] + 3 * desc_margin]
+            corr = sp.correlate2d(patch, desc, 'same')
+            y, x = np.unravel_index(np.argmax(corr), corr.shape)
+            # print((x + p[0] - 3*desc_margin + 1, y + p[1] - 3*desc_margin + 1))
+            '''cv2.circle(frame, (x + p[0] - 3*desc_margin, y + p[1] - 3*desc_margin), 3, (0,0,255), 3)
+            cv2.imshow('court', frame)
+            if cv2.waitKey(0) & 0xff == 27:
+                cv2.destroyAllWindows()'''
+            new_points.append([x + p[0] - 3 * desc_margin + 1, y + p[1] - 3 * desc_margin + 1])
+        new_points = np.array(new_points)
+        retval, inliers = cv2.estimateAffinePartial2D(new_points, self.frame_points)
+        # ps = np.concatenate([self.frame_points, np.ones((self.frame_points.shape[0], 1))], 1)
+        # self.frame_points = np.matmul(retval,ps.transpose()).transpose()
+        self.frame = cv2.warpAffine(frame, retval, frame.shape[1::-1])
+        R1 = self.affine_mat[:, :2]
+        T1 = self.affine_mat[:, 2]
+        R2 = retval[:, :2]
+        T2 = retval[:, 2]
+        R = R2 @ R1
+        T = np.expand_dims(np.array(R2 @ T1 + T2),1)
+        self.affine_mat = np.concatenate([R, T], 1)
+        warped = cv2.warpAffine(frame, retval, frame.shape[1::-1])
+        g = self.frame.copy()
+        for p in self.frame_points:
+            p = (round(p[0]), round(p[1]))
+
+            cv2.circle(warped, p, 2, (0, 0, 255), 2)
+
+        '''cv2.imshow('court', g)
+        if cv2.waitKey(0) & 0xff == 27:
+            cv2.destroyAllWindows()
+        '''
+        return warped
 
 
 def sort_intersection_points(intersections):
