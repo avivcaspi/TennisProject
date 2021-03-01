@@ -123,7 +123,7 @@ class DetectionModel:
         diff = self.im_diff.diff(frame)
 
         res = diff * fgMask * 255
-        res = cv2.dilate(res, np.ones((25, 25)))
+        res = cv2.dilate(res, np.ones((40, 25)))
         contours, _ = cv2.findContours(res, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         contours_poly = []
         boundRects = []
@@ -133,29 +133,31 @@ class DetectionModel:
             if 200 < cv2.contourArea(c) < 12000:
                 contours_poly.append(cv2.approxPolyDP(c, 3, True))
                 boundRects.append(cv2.boundingRect(contours_poly[-1]))
-        if len(contours_poly) > 6:
-            return
 
         drawing = np.zeros((res.shape[0], res.shape[1], 3), dtype=np.uint8)
-
-        for boundRect in boundRects:
-            box = image[int(boundRect[1]):int(boundRect[1] + boundRect[3]),
-                  int(boundRect[0]):int(boundRect[0] + boundRect[2])]
-            cv2.imshow('res', box)
+        f = image.copy()
+        mask = np.ones_like(image)
+        for i, boundRect in enumerate(boundRects):
+            mask[int(boundRect[1]):int(boundRect[1] + boundRect[3]), int(boundRect[0]):int(boundRect[0] + boundRect[2]), :] = (0,0,0)
+            f = f * mask
+            '''cv2.imshow('res', box)
             if cv2.waitKey(0) & 0xff == 27:
-                cv2.destroyAllWindows()
+                cv2.destroyAllWindows()'''
 
             color = (0, 0, 255)
+            cv2.drawContours(drawing, contours_poly, i, (255,0,0))
             cv2.rectangle(drawing, (int(boundRect[0]), int(boundRect[1])),
-                          (int(boundRect[0] + boundRect[2]), int(boundRect[1] + boundRect[3])), color, 2, )
+                          (int(boundRect[0] + boundRect[2]), int(boundRect[1] + boundRect[3])), color, 2)
 
-        '''cv2.imshow('Contours', res)
+        res = cv2.cvtColor(res, cv2.COLOR_GRAY2BGR)
+        side_by_side = np.concatenate([res, image], axis=1)
+        side_by_side = cv2.resize(side_by_side, (1920, 540))
+        cv2.imshow('Contours', side_by_side)
         c = image.copy()
         c[res == 0] = 0
-        #cv2.imshow('res',  c)
 
         if cv2.waitKey(0) & 0xff == 27:
-            cv2.destroyAllWindows()'''
+            cv2.destroyAllWindows()
         return res
 
 
@@ -184,3 +186,16 @@ class ImageDiff:
             self.diff_image = abs(self.last_image - image)
             self.diff_image = cv2.threshold(self.diff_image, 200, 1, cv2.THRESH_BINARY)[1]
             return self.diff_image
+
+
+if __name__ == "__main__":
+    video = cv2.VideoCapture('../videos/vid3.mp4')
+    model = DetectionModel()
+    while True:
+        ret, frame = video.read()
+
+        if ret:
+            model.find_canadicate(frame)
+
+        else:
+            break

@@ -98,6 +98,26 @@ def add_data_to_video(input_video, df, show_video, with_frame, output_folder,
     cv2.destroyAllWindows()
 
 
+def create_top_view(court_detector, player_1_boxes):
+    court = court_detector.court_reference.court.copy()
+    court = cv2.line(court, *court_detector.court_reference.net, 255, 5)
+    inv_mat = court_detector.game_warp_matrix
+    v_width, v_height = court.shape[::-1]
+    court = cv2.cvtColor(court, cv2.COLOR_GRAY2BGR)
+    out = cv2.VideoWriter('output/top_view.avi',
+                          cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), 30, (v_width, v_height))
+
+    for box in player_1_boxes:
+        frame = court.copy()
+        # TODO use the transform ones on all the positions
+        feet_pos = np.array([(box[0] + (box[2] - box[0]) / 2).item(), box[3].item()]).reshape((1, 1, 2))
+        feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mat).reshape(-1)
+        frame = cv2.circle(frame, (int(feet_court_pos[0]), int(feet_court_pos[1])), 10, (0, 0, 255), 15)
+        out.write(frame)
+    out.release()
+    cv2.destroyAllWindows()
+
+
 def video_process(video_path, show_video=False, include_video=True,
                   stickman=True, stickman_box=True, court=True,
                   output_file='output', output_folder='output',
@@ -193,7 +213,7 @@ def video_process(video_path, show_video=False, include_video=True,
     video.release()
     out.release()
     cv2.destroyAllWindows()
-
+    create_top_view(court_detector, detection_model.player_1_boxes)
     # Save landmarks in csv files
     df = None
     # Save stickman data
