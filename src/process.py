@@ -170,7 +170,7 @@ def video_process(video_path, show_video=False, include_video=True,
             if frame_i == 1:
                 court_detector.detect(frame)
                 print(f'Court detection {"Success" if court_detector.success_flag else "Failed"}')
-                print('Time to detect court :  %02f seconds' % time.time() - start_time)
+                print(f'Time to detect court :  {time.time() - start_time} seconds')
                 start_time = time.time()
             if court:
                 court_detector.track_court(frame)
@@ -233,5 +233,5 @@ def video_process(video_path, show_video=False, include_video=True,
 
 
 s = time.time()
-video_process(video_path='../videos/vid15.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False, court=True)
-print(f'Total computation time : %02f seconds' % time.time() - s)
+video_process(video_path='../videos/vid7.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False, court=True)
+print(f'Total computation time : {time.time() - s} seconds')

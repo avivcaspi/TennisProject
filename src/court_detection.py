@@ -36,7 +36,6 @@ class CourtDetector:
         self.success_score = 1000
         self.best_conf = None
         self.frame_points = None
-        self.affine_mat = np.array([[1, 0, 0], [0, 1, 0]], dtype=np.float)
 
     def detect(self, frame, verbose=0):
         self.verbose = verbose

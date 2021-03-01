@@ -55,6 +55,7 @@ class DetectionModel:
 
             persons_boxes = self._detect(image_court)
             if len(persons_boxes) > 0:
+                # TODO find a different way to choose correct box
                 # biggest_box = sorted(persons_boxes, key=lambda x: area_of_box(x), reverse=True)[0]
                 bottom_box = max(persons_boxes, key=lambda x: x[3])
                 self.player_1_boxes.append(bottom_box)
@@ -80,10 +81,12 @@ class DetectionModel:
                     if distance < smallest_dist:
                         smallest_dist = distance
                         closest_box = orig_box_location
+                # TODO the patch is small so this might not be needed
                 if smallest_dist < 100:
                     self.counter = 0
                     self.player_1_boxes.append(closest_box)
                 else:
+                    # Counter is to decide if box has not been found for more than number of frames
                     self.counter += 1
                     self.player_1_boxes.append(self.player_1_boxes[-1])
             else:
