@@ -150,11 +150,14 @@ def video_process(video_path, show_video=False, include_video=True,
             if frame_i == 1:
                 court_detector.detect(frame)
                 print(f'Court detection {"Success" if court_detector.success_flag else "Failed"}')
+                print('Time to detect court :  %02f seconds' % time.time() - start_time)
+                start_time = time.time()
             if court:
-                frame = court_detector.track_court(frame)
+                court_detector.track_court(frame)
+
                 '''if court_detector.check_court_movement(frame):
-                    court_detector.detect(frame)
-                frame = court_detector.add_court_overlay(frame, overlay_color=(0, 0, 255))'''
+                    court_detector.detect(frame)'''
+            frame = court_detector.add_court_overlay(frame, overlay_color=(0, 0, 255))
 
             # initialize landmarks lists
             stickman_marks = np.zeros_like(frame)
@@ -210,5 +213,5 @@ def video_process(video_path, show_video=False, include_video=True,
 
 
 s = time.time()
-video_process(video_path='../videos/vid3.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False, court=True)
-print(time.time() - s)
+video_process(video_path='../videos/vid15.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False, court=True)
+print(f'Total computation time : %02f seconds' % time.time() - s)

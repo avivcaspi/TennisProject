@@ -45,9 +45,9 @@ class DetectionModel:
             top_y = max_values_index[0]
             bottom_y = max_values_index[-1]'''
             # cv2.imwrite('../report/frame_only_court.png', image_court)
-            cv2.imshow('res', image_court)
+            '''cv2.imshow('res', image_court)
             if cv2.waitKey(0) & 0xff == 27:
-                cv2.destroyAllWindows()
+                cv2.destroyAllWindows()'''
 
             # mask = self.find_canadicate(image)
             # image[mask == 0, :] = (0,0,0)

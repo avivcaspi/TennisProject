@@ -38,7 +38,8 @@ class CourtDetector:
         self.frame_points = None
         self.affine_mat = np.array([[1, 0, 0], [0, 1, 0]], dtype=np.float)
 
-    def detect(self, frame):
+    def detect(self, frame, verbose=0):
+        self.verbose = verbose
         self.frame = frame
         self.v_height, self.v_width = frame.shape[:2]
         self.gray = self._threshold(frame)
@@ -299,60 +300,79 @@ class CourtDetector:
         return accuracy
 
     def track_court(self, frame):
-        frame = cv2.warpAffine(frame, self.affine_mat, frame.shape[1::-1])
-        last_frame = cv2.cvtColor(self.frame.copy(), cv2.COLOR_BGR2GRAY) / 255
-        last_frame -= last_frame.mean()
-        current_frame = cv2.cvtColor(frame.copy(), cv2.COLOR_BGR2GRAY) / 255
-        current_frame -= current_frame.mean()
-
+        copy = frame.copy()
+        dist = 5
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         if self.frame_points is None:
-            ps = self.court_reference.court_conf[1] + self.court_reference.court_conf[2] + \
-                 self.court_reference.court_conf[5]
-            court_reference_points = np.array(ps, dtype=np.float32).reshape((-1, 1, 2))
-            self.frame_points = cv2.perspectiveTransform(court_reference_points,
+            conf_points = np.array(self.court_reference.court_conf[self.best_conf], dtype=np.float32).reshape(
+                (-1, 1, 2))
+            self.frame_points = cv2.perspectiveTransform(conf_points,
                                                          self.court_warp_matrix).squeeze().round()
+        line1 = self.frame_points[:2]
+        line2 = self.frame_points[2:4]
+        line3 = self.frame_points[[0, 2]]
+        line4 = self.frame_points[[1, 3]]
+        lines = [line1, line2, line3, line4]
+        new_lines = []
+        for line in lines:
+            points_on_line = np.linspace(line[0], line[1], 102)[1:-1]  # 100 samples on the line
+            p1 = None
+            p2 = None
+            if line[0][0] > self.v_width or line[0][0] < 0 or line[0][1] > self.v_height or line[0][1] < 0:
+                for p in points_on_line:
+                    if 0 < p[0] < self.v_width and 0 < p[1] < self.v_height:
+                        p1 = p
+                        break
+            if line[1][0] > self.v_width or line[1][0] < 0 or line[1][1] > self.v_height or line[1][1] < 0:
+                for p in reversed(points_on_line):
+                    if 0 < p[0] < self.v_width and 0 < p[1] < self.v_height:
+                        p2 = p
+                        break
+            if p1 is not None or p2 is not None:
+                print('points outside screen')
+                points_on_line = np.linspace(p1 if p1 is not None else line[0], p2 if p2 is not None else line[1], 102)[1:-1]
 
-        desc_margin = 20
-        new_points = []
-        for p in self.frame_points:
-            p = (round(p[0]), round(p[1]))
-            # print(p)
-            desc = last_frame[p[1] - desc_margin: p[1] + desc_margin, p[0] - desc_margin: p[0] + desc_margin].copy()
-            desc -= desc.mean()
-            patch = current_frame[p[1] - 3 * desc_margin: p[1] + 3 * desc_margin,
-                    p[0] - 3 * desc_margin: p[0] + 3 * desc_margin]
-            corr = sp.correlate2d(patch, desc, 'same')
-            y, x = np.unravel_index(np.argmax(corr), corr.shape)
-            # print((x + p[0] - 3*desc_margin + 1, y + p[1] - 3*desc_margin + 1))
-            '''cv2.circle(frame, (x + p[0] - 3*desc_margin, y + p[1] - 3*desc_margin), 3, (0,0,255), 3)
-            cv2.imshow('court', frame)
-            if cv2.waitKey(0) & 0xff == 27:
-                cv2.destroyAllWindows()'''
-            new_points.append([x + p[0] - 3 * desc_margin + 1, y + p[1] - 3 * desc_margin + 1])
-        new_points = np.array(new_points)
-        retval, inliers = cv2.estimateAffinePartial2D(new_points, self.frame_points)
-        # ps = np.concatenate([self.frame_points, np.ones((self.frame_points.shape[0], 1))], 1)
-        # self.frame_points = np.matmul(retval,ps.transpose()).transpose()
-        self.frame = cv2.warpAffine(frame, retval, frame.shape[1::-1])
-        R1 = self.affine_mat[:, :2]
-        T1 = self.affine_mat[:, 2]
-        R2 = retval[:, :2]
-        T2 = retval[:, 2]
-        R = R2 @ R1
-        T = np.expand_dims(np.array(R2 @ T1 + T2),1)
-        self.affine_mat = np.concatenate([R, T], 1)
-        warped = cv2.warpAffine(frame, retval, frame.shape[1::-1])
-        g = self.frame.copy()
-        for p in self.frame_points:
-            p = (round(p[0]), round(p[1]))
+            new_points = []
+            for p in points_on_line:
+                p = (round(p[0]), round(p[1]))
+                top_y, top_x = max(p[1] - dist,0), max(p[0] - dist,0)
+                bottom_y, bottom_x = min(p[1] + dist, self.v_height), min(p[0] + dist, self.v_width)
+                patch = gray[top_y: bottom_y, top_x: bottom_x]
+                y, x = np.unravel_index(np.argmax(patch), patch.shape)
+                if patch[y, x] > 150:
+                    new_p = (x + top_x + 1, y + top_y + 1)
+                    new_points.append(new_p)
+                    cv2.circle(copy, p, 1, (255, 0, 0), 1)
+                    cv2.circle(copy, new_p, 1, (0, 0, 255), 1)
+            new_points = np.array(new_points, dtype=np.float32).reshape((-1, 1, 2))
+            [vx, vy, x, y] = cv2.fitLine(new_points, cv2.DIST_L2, 0, 0.01, 0.01)
+            new_lines.append(((int(x - vx * self.v_width), int(y - vy * self.v_width)),
+                              (int(x + vx * self.v_width), int(y + vy * self.v_width))))
 
-            cv2.circle(warped, p, 2, (0, 0, 255), 2)
+            if len(new_points) < 50:
+                cv2.imshow('court', copy)
+                if cv2.waitKey(0) & 0xff == 27:
+                    cv2.destroyAllWindows()
+                self.detect(frame)
+                conf_points = np.array(self.court_reference.court_conf[self.best_conf], dtype=np.float32).reshape(
+                    (-1, 1, 2))
+                self.frame_points = cv2.perspectiveTransform(conf_points,
+                                                             self.court_warp_matrix).squeeze().round()
 
-        '''cv2.imshow('court', g)
-        if cv2.waitKey(0) & 0xff == 27:
-            cv2.destroyAllWindows()
-        '''
-        return warped
+                print('Smaller than 50')
+                return
+
+        i1 = line_intersection(new_lines[0], new_lines[2])
+        i2 = line_intersection(new_lines[0], new_lines[3])
+        i3 = line_intersection(new_lines[1], new_lines[2])
+        i4 = line_intersection(new_lines[1], new_lines[3])
+        intersections = np.array([i1, i2, i3, i4], dtype=np.float32)
+        matrix, _ = cv2.findHomography(np.float32(self.court_reference.court_conf[self.best_conf]),
+                                       intersections, method=0)
+        inv_matrix = cv2.invert(matrix)[1]
+        self.court_warp_matrix = matrix
+        self.game_warp_matrix = inv_matrix
+        self.frame_points = intersections
 
 
 def sort_intersection_points(intersections):
