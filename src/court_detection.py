@@ -5,6 +5,8 @@ from sympy import Line
 from itertools import combinations
 from court_reference import CourtReference
 import scipy.signal as sp
+from multiprocessing import Process
+import multiprocessing
 
 
 class CourtDetector:
@@ -182,36 +184,58 @@ class CourtDetector:
                 new_vertical_lines.append(line)
         return new_horizontal_lines, new_vertical_lines
 
+    def _thread_function(self, horizontal_pair, vertical_lines, results, loc):
+        max_score = -np.inf
+        max_mat = None
+        max_inv_mat = None
+        k = 0
+
+        for vertical_pair in list(combinations(vertical_lines, 2)):
+            h1, h2 = horizontal_pair
+            v1, v2 = vertical_pair
+            i1 = line_intersection((tuple(h1[:2]), tuple(h1[2:])), (tuple(v1[0:2]), tuple(v1[2:])))
+            i2 = line_intersection((tuple(h1[:2]), tuple(h1[2:])), (tuple(v2[0:2]), tuple(v2[2:])))
+            i3 = line_intersection((tuple(h2[:2]), tuple(h2[2:])), (tuple(v1[0:2]), tuple(v1[2:])))
+            i4 = line_intersection((tuple(h2[:2]), tuple(h2[2:])), (tuple(v2[0:2]), tuple(v2[2:])))
+
+            intersections = [i1, i2, i3, i4]
+            intersections = sort_intersection_points(intersections)
+
+            for i, configuration in self.court_reference.court_conf.items():
+                matrix, _ = cv2.findHomography(np.float32(configuration), np.float32(intersections), method=0)
+                inv_matrix = cv2.invert(matrix)[1]
+                confi_score = self._get_confi_score(matrix)
+
+                if max_score < confi_score:
+                    max_score = confi_score
+                    max_mat = matrix
+                    max_inv_mat = inv_matrix
+                    self.best_conf = i
+                k += 1
+        print(f'{multiprocessing.current_process()} ran {k} tries and max score is {max_score}')
+        results[loc] = [max_score, max_mat, max_inv_mat]
+
     def _find_homography(self, horizontal_lines, vertical_lines):
         # TODO maybe use random sampling of lines until threshold score reached
         max_score = -np.inf
         max_mat = None
         max_inv_mat = None
         k = 0
-        for horizontal_pair in list(combinations(horizontal_lines, 2)):
-            for vertical_pair in list(combinations(vertical_lines, 2)):
-                h1, h2 = horizontal_pair
-                v1, v2 = vertical_pair
-                i1 = line_intersection((tuple(h1[:2]), tuple(h1[2:])), (tuple(v1[0:2]), tuple(v1[2:])))
-                i2 = line_intersection((tuple(h1[:2]), tuple(h1[2:])), (tuple(v2[0:2]), tuple(v2[2:])))
-                i3 = line_intersection((tuple(h2[:2]), tuple(h2[2:])), (tuple(v1[0:2]), tuple(v1[2:])))
-                i4 = line_intersection((tuple(h2[:2]), tuple(h2[2:])), (tuple(v2[0:2]), tuple(v2[2:])))
+        horizontal_pairs = list(combinations(horizontal_lines, 2))
+        print(f'Number of threads is {len(horizontal_pairs)}')
+        threads = []
+        manager = multiprocessing.Manager()
+        return_dict = manager.dict()
+        for i, subset in enumerate(horizontal_pairs):
+            threads.append(Process(target=self._thread_function, args=(subset, vertical_lines, return_dict, i)))
+            threads[-1].start()
 
-                intersections = [i1, i2, i3, i4]
-                intersections = sort_intersection_points(intersections)
+        for thread in threads:
+            thread.join()
 
-                for i, configuration in self.court_reference.court_conf.items():
-                    matrix, _ = cv2.findHomography(np.float32(configuration), np.float32(intersections), method=0)
-                    inv_matrix = cv2.invert(matrix)[1]
-                    confi_score = self._get_confi_score(matrix)
+        max_results = max(return_dict.values(), key=lambda x: x[0])
 
-                    if max_score < confi_score:
-                        max_score = confi_score
-                        max_mat = matrix
-                        max_inv_mat = inv_matrix
-                        self.best_conf = i
-
-                    k += 1
+        max_score, max_mat, max_inv_mat = max_results
 
         if self.verbose:
             frame = self.frame.copy()
@@ -220,7 +244,6 @@ class CourtDetector:
             if cv2.waitKey(0) & 0xff == 27:
                 cv2.destroyAllWindows()
         print(f'Score = {max_score}')
-        print(k)
 
         return max_mat, max_inv_mat, max_score
 
@@ -429,7 +452,7 @@ def display_lines_and_points_on_frame(frame, lines=(), points=(), line_color=(0,
 
 
 if __name__ == '__main__':
-    filename = '../images/img11.jpg'
+    filename = '../images/img1.jpg'
     img = cv2.imread(filename)
     import time
 
