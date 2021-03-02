@@ -18,8 +18,8 @@ class CourtDetector:
         self.v_height = 0
         self.frame = None
         self.gray = None
-        self.court_warp_matrix = None
-        self.game_warp_matrix = None
+        self.court_warp_matrix = []
+        self.game_warp_matrix = []
         self.court_score = 0
         self.baseline_top = None
         self.baseline_bottom = None
@@ -47,9 +47,10 @@ class CourtDetector:
 
         horizontal_lines, vertical_lines = self._detect_lines(filtered)
 
-        self.court_warp_matrix, self.game_warp_matrix, self.court_score = self._find_homography(horizontal_lines,
-                                                                                                vertical_lines)
-
+        court_warp_matrix, game_warp_matrix, self.court_score = self._find_homography(horizontal_lines,
+                                                                                      vertical_lines)
+        self.court_warp_matrix.append(court_warp_matrix)
+        self.game_warp_matrix.append(game_warp_matrix)
         court_accuracy = self._get_court_accuracy(0)
         if court_accuracy > self.success_accuracy and self.court_score > self.success_score:
             self.success_flag = True
@@ -234,16 +235,16 @@ class CourtDetector:
         w_p = np.sum(wrong)
         return c_p - 0.5 * w_p
 
-    def add_court_overlay(self, frame, homography=None, overlay_color=(255, 255, 255)):
-        if homography is None and self.court_warp_matrix is not None:
-            homography = self.court_warp_matrix
+    def add_court_overlay(self, frame, homography=None, overlay_color=(255, 255, 255), frame_num=-1):
+        if homography is None and len(self.court_warp_matrix) > 0 and frame_num < len(self.court_warp_matrix):
+            homography = self.court_warp_matrix[frame_num]
         court = cv2.warpPerspective(self.court_reference.court, homography, frame.shape[1::-1])
         frame[court > 0, :] = overlay_color
         return frame
 
     def find_lines_location(self):
         p = np.array(self.court_reference.get_important_lines(), dtype=np.float32).reshape((-1, 1, 2))
-        lines = cv2.perspectiveTransform(p, self.court_warp_matrix).reshape(-1)
+        lines = cv2.perspectiveTransform(p, self.court_warp_matrix[-1]).reshape(-1)
         self.baseline_top = lines[:4]
         self.baseline_bottom = lines[4:8]
         self.net = lines[8:12]
@@ -265,12 +266,12 @@ class CourtDetector:
             threshold = self.court_score * 0.6
         self.frame = frame
         self.gray = self._threshold(frame)
-        current_score = self._get_confi_score(self.court_warp_matrix)
+        current_score = self._get_confi_score(self.court_warp_matrix[-1])
         print(f'Score diff {abs(self.court_score - current_score)}')
         return abs(self.court_score - current_score) > threshold
 
     def get_warped_court(self):
-        court = cv2.warpPerspective(self.court_reference.court, self.court_warp_matrix, self.frame.shape[1::-1])
+        court = cv2.warpPerspective(self.court_reference.court, self.court_warp_matrix[-1], self.frame.shape[1::-1])
         court[court > 0] = 1
         return court
 
@@ -306,7 +307,7 @@ class CourtDetector:
             conf_points = np.array(self.court_reference.court_conf[self.best_conf], dtype=np.float32).reshape(
                 (-1, 1, 2))
             self.frame_points = cv2.perspectiveTransform(conf_points,
-                                                         self.court_warp_matrix).squeeze().round()
+                                                         self.court_warp_matrix[-1]).squeeze().round()
         line1 = self.frame_points[:2]
         line2 = self.frame_points[2:4]
         line3 = self.frame_points[[0, 2]]
@@ -329,12 +330,13 @@ class CourtDetector:
                         break
             if p1 is not None or p2 is not None:
                 print('points outside screen')
-                points_on_line = np.linspace(p1 if p1 is not None else line[0], p2 if p2 is not None else line[1], 102)[1:-1]
+                points_on_line = np.linspace(p1 if p1 is not None else line[0], p2 if p2 is not None else line[1], 102)[
+                                 1:-1]
 
             new_points = []
             for p in points_on_line:
                 p = (round(p[0]), round(p[1]))
-                top_y, top_x = max(p[1] - dist,0), max(p[0] - dist,0)
+                top_y, top_x = max(p[1] - dist, 0), max(p[0] - dist, 0)
                 bottom_y, bottom_x = min(p[1] + dist, self.v_height), min(p[0] + dist, self.v_width)
                 patch = gray[top_y: bottom_y, top_x: bottom_x]
                 y, x = np.unravel_index(np.argmax(patch), patch.shape)
@@ -356,7 +358,7 @@ class CourtDetector:
                 conf_points = np.array(self.court_reference.court_conf[self.best_conf], dtype=np.float32).reshape(
                     (-1, 1, 2))
                 self.frame_points = cv2.perspectiveTransform(conf_points,
-                                                             self.court_warp_matrix).squeeze().round()
+                                                             self.court_warp_matrix[-1]).squeeze().round()
 
                 print('Smaller than 50')
                 return
@@ -369,8 +371,8 @@ class CourtDetector:
         matrix, _ = cv2.findHomography(np.float32(self.court_reference.court_conf[self.best_conf]),
                                        intersections, method=0)
         inv_matrix = cv2.invert(matrix)[1]
-        self.court_warp_matrix = matrix
-        self.game_warp_matrix = inv_matrix
+        self.court_warp_matrix.append(matrix)
+        self.game_warp_matrix.append(inv_matrix)
         self.frame_points = intersections
 
 

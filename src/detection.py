@@ -34,7 +34,7 @@ class DetectionModel:
         if len(self.player_1_boxes) == 0:
             court_type = 1
             white_ref = court_detector.court_reference.get_court_mask(court_type)
-            white_mask = cv2.warpPerspective(white_ref, court_detector.court_warp_matrix, image.shape[1::-1])
+            white_mask = cv2.warpPerspective(white_ref, court_detector.court_warp_matrix[-1], image.shape[1::-1])
             # TODO find different way to add more space at the top
             if court_type == 2:
                 white_mask = cv2.dilate(white_mask, np.ones((50, 1)), anchor=(0, 0))
@@ -57,8 +57,8 @@ class DetectionModel:
             if len(persons_boxes) > 0:
                 # TODO find a different way to choose correct box
                 # biggest_box = sorted(persons_boxes, key=lambda x: area_of_box(x), reverse=True)[0]
-                bottom_box = max(persons_boxes, key=lambda x: x[3])
-                self.player_1_boxes.append(bottom_box)
+                biggest_box = max(persons_boxes, key=lambda x: area_of_box(x)).round()
+                self.player_1_boxes.append(biggest_box)
         else:
             xt, yt, xb, yb = self.player_1_boxes[-1]
             xt, yt, xb, yb = int(xt), int(yt), int(xb), int(yb)

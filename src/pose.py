@@ -47,18 +47,25 @@ class PoseExtractor:
         cv2.line(frame, p1, p2, [0, 255, 255])
         return frame
 
-    def extract_pose(self, image):
+    def extract_pose(self, image, player_boxes):
         """
         extract pose from given image using pose_model
         :param image: ndarray, the image we would like to extract the pose from
         :return: frame that include the pose stickman
         """
+        height, width = image.shape[:2]
+        margin = 100
+        xt, yt, xb, yb = player_boxes[-1]
+        xt, yt, xb, yb = int(xt), int(yt), int(xb), int(yb)
+        patch = image[max(yt - margin, 0):min(yb + margin, height), max(xt - margin, 0):min(xb + margin, width)].copy()
+
         # initialize pose stickman frame and data
         stickman = np.zeros_like(image)
+        patch_zeros = np.zeros_like(patch)
         x_data, y_data = [], []
 
         # creating torch.tensor from the image ndarray
-        frame_t = image.transpose((2, 0, 1)) / 255
+        frame_t = patch.transpose((2, 0, 1)) / 255
         frame_tensor = torch.from_numpy(frame_t).unsqueeze(0).type(self.dtype)
 
         # Finding boxes and keypoints
@@ -72,7 +79,7 @@ class PoseExtractor:
             # Marking every person found in the image with high score
             for box, label, score in zip(p[0]['boxes'][:self.person_num], p[0]['labels'], p[0]['scores']):
                 if label == self.PERSON_LABEL and score > self.SCORE_MIN:
-                    cv2.rectangle(stickman, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), [0, 0, 255], 2)
+                    cv2.rectangle(patch_zeros, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), [0, 0, 255], 2)
 
         # Marking all keypoints of the person we found, and connecting part to create the stick man
         for keypoints, keypoint_scores, score in zip(p[0]['keypoints'][:self.person_num], p[0]['keypoints_scores'],
@@ -82,17 +89,18 @@ class PoseExtractor:
                 for i, ((x, y, v), key_point_score) in enumerate(zip(keypoints, keypoint_scores)):
                     # add keypoint only if it exceed threshold score
                     if key_point_score > self.keypoint_threshold:
-                        x_data.append(x.item())
-                        y_data.append(y.item())
-                        cv2.circle(stickman, (int(x), int(y)), 3, [255, 0, 0])
+                        x_data.append(x.item() + max(xt - margin, 0))
+                        y_data.append(y.item() + max(yt - margin, 0))
+                        cv2.circle(patch_zeros, (int(x), int(y)), 3, [255, 0, 0])
                     else:
                         # if the keypoint was not found we add None
                         # in the smoothing section we will try to complete the missing data
                         x_data.append(None)
                         y_data.append(None)
                 # create the stickman using the keypoints we found
-                self._add_lines(stickman, keypoints, keypoint_scores)
+                self._add_lines(patch_zeros, keypoints, keypoint_scores)
             self.data.append(x_data + y_data)
+        stickman[max(yt - margin, 0):min(yb + margin, height), max(xt - margin, 0):min(xb + margin, width)] = patch_zeros
 
         return stickman
 

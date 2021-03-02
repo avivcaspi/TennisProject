@@ -11,7 +11,7 @@ from court_detection import CourtDetector
 
 
 def add_data_to_video(input_video, df, show_video, with_frame, output_folder,
-                      output_file, stickman_pairs):
+                      output_file, stickman_pairs, court_detector):
     """
     Creates new videos with pose stickman, face landmarks and blinks counter
     :param input_video: str, path to the input videos
@@ -76,6 +76,7 @@ def add_data_to_video(input_video, df, show_video, with_frame, output_folder,
                     cv2.line(img, points[partA], points[partB], line_color, 1, lineType=cv2.LINE_AA)
                     cv2.line(img_no_frame, points[partA], points[partB], line_color, 1, lineType=cv2.LINE_AA)
 
+        img_no_frame = court_detector.add_court_overlay(img_no_frame, frame_num=orig_frame)
         # display frame
         if show_video:
             cv2.imshow('Output-Skeleton', img)
@@ -121,7 +122,7 @@ def create_top_view(court_detector, player_1_boxes):
 def video_process(video_path, show_video=False, include_video=True,
                   stickman=True, stickman_box=True, court=True,
                   output_file='output', output_folder='output',
-                  smoothing=True):
+                  smoothing=True, top_view=True):
     """
     Takes videos of one person as input, and calculate the body pose and face landmarks, and saves them as csv files.
     Also, output a result videos with the keypoints marked.
@@ -177,7 +178,6 @@ def video_process(video_path, show_video=False, include_video=True,
 
                 '''if court_detector.check_court_movement(frame):
                     court_detector.detect(frame)'''
-            frame = court_detector.add_court_overlay(frame, overlay_color=(0, 0, 255))
 
             # initialize landmarks lists
             stickman_marks = np.zeros_like(frame)
@@ -187,14 +187,14 @@ def video_process(video_path, show_video=False, include_video=True,
 
             # Create stick man figure (pose detection)
             if stickman:
-                stickman_marks = pose_extractor.extract_pose(frame)
+                stickman_marks = pose_extractor.extract_pose(frame, detection_model.player_1_boxes)
 
             # Combine all landmarks
             # TODO clean this shit
-            total_marks = stickman_marks + boxes
+            total_marks = np.clip(stickman_marks + boxes, 0, 255)
             mask = total_marks == 0
             frame = frame * mask + total_marks if include_video else total_marks
-
+            frame = court_detector.add_court_overlay(frame, overlay_color=(0, 0, 255))
             # Output frame and save it
             if show_video:
                 cv2.imshow('frame', frame)
@@ -213,7 +213,8 @@ def video_process(video_path, show_video=False, include_video=True,
     video.release()
     out.release()
     cv2.destroyAllWindows()
-    create_top_view(court_detector, detection_model.player_1_boxes)
+    if top_view:
+        create_top_view(court_detector, detection_model.player_1_boxes)
     # Save landmarks in csv files
     df = None
     # Save stickman data
@@ -228,10 +229,10 @@ def video_process(video_path, show_video=False, include_video=True,
 
         smoothing_output_file = output_file + '_smoothing'
         # add smoothing data to the videos
-        add_data_to_video(video_path, df_smooth, show_video, 2, output_folder,
-                          smoothing_output_file, get_stickman_line_connection())
+        add_data_to_video(video_path, df_smooth, show_video, 0, output_folder,
+                          smoothing_output_file, get_stickman_line_connection(), court_detector)
 
 
 s = time.time()
-video_process(video_path='../videos/vid7.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False, court=True)
+video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False, court=True, top_view=False)
 print(f'Total computation time : {time.time() - s} seconds')
