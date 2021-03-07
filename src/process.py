@@ -239,11 +239,11 @@ def video_process(video_path, show_video=False, include_video=True,
 
         smoothing_output_file = output_file + '_smoothing'
         # add smoothing data to the videos
-        add_data_to_video(video_path, df_smooth, show_video, 1, output_folder,
+        add_data_to_video(video_path, df_smooth, show_video, 2, output_folder,
                           smoothing_output_file, get_stickman_line_connection(), court_detector)
 
 
 s = time.time()
-video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
+video_process(video_path='../videos/vid20.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
               court=False, top_view=False)
 print(f'Total computation time : {time.time() - s} seconds')

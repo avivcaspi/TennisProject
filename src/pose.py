@@ -55,11 +55,15 @@ class PoseExtractor:
         :return: frame that include the pose stickman
         """
         height, width = image.shape[:2]
-        margin = 50
-        xt, yt, xb, yb = player_boxes[-1]
-        xt, yt, xb, yb = int(xt), int(yt), int(xb), int(yb)
-        patch = image[max(yt - margin, 0):min(yb + margin, height), max(xt - margin, 0):min(xb + margin, width)].copy()
-
+        if len(player_boxes) > 0:
+            margin = 50
+            xt, yt, xb, yb = player_boxes[-1]
+            xt, yt, xb, yb = int(xt), int(yt), int(xb), int(yb)
+            patch = image[max(yt - margin, 0):min(yb + margin, height), max(xt - margin, 0):min(xb + margin, width)].copy()
+        else:
+            margin = 0
+            xt, yt, xb, yb = 0, 0, width, height
+            patch = image.copy()
         # initialize pose stickman frame and data
         stickman = np.zeros_like(image)
         patch_zeros = np.zeros_like(patch)

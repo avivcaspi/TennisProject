@@ -24,6 +24,7 @@ class Smooth:
 
         # Smooth it out
         if df is not None:
+            #df = self._swap_sides(df)
             # fill empty slots with data from before and after (limit the distance to 3) (if available)
             df = df.fillna(method='ffill', limit=3)
             df = df.fillna(method='bfill', limit=3)
@@ -58,11 +59,8 @@ class Smooth:
             for part in body_parts:
                 curr_left_part = np.array([curr_row[f'left_{part}_x'], curr_row[f'left_{part}_y']])
                 curr_right_part = np.array([curr_row[f'right_{part}_x'], curr_row[f'right_{part}_y']])
-                prev_left_part = np.array([prev_row[f'left_{part}_x'], prev_row[f'left_{part}_y']])
-                prev_right_part = np.array([prev_row[f'right_{part}_x'], prev_row[f'right_{part}_y']])
 
-                if np.linalg.norm(curr_right_part - prev_right_part) > np.linalg.norm(curr_right_part - prev_left_part) \
-                        or np.linalg.norm(curr_left_part - prev_left_part) > np.linalg.norm(curr_left_part - prev_right_part):
+                if curr_left_part[0] < curr_right_part[0]:
                     temp = curr_row[f'left_{part}_x'].copy()
                     curr_row[f'left_{part}_x'] = curr_row[f'right_{part}_x'].copy()
                     curr_row[f'right_{part}_x'] = temp
@@ -71,6 +69,7 @@ class Smooth:
                     curr_row[f'right_{part}_y'] = temp
 
             prev_row = curr_row
+        return df
 
     def save_to_csv(self, output_folder):
         """
