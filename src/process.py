@@ -3,6 +3,8 @@ import time
 
 import cv2
 import numpy as np
+from scipy import signal
+
 from detection import DetectionModel
 from pose import PoseExtractor
 from smooth import Smooth
@@ -107,13 +109,19 @@ def create_top_view(court_detector, player_1_boxes):
     court = cv2.cvtColor(court, cv2.COLOR_GRAY2BGR)
     out = cv2.VideoWriter('output/top_view.avi',
                           cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), 30, (v_width, v_height))
-
-    for box in player_1_boxes:
-        frame = court.copy()
-        # TODO use the transform ones on all the positions
+    positions = []
+    for i, box in enumerate(player_1_boxes):
         feet_pos = np.array([(box[0] + (box[2] - box[0]) / 2).item(), box[3].item()]).reshape((1, 1, 2))
-        feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mat).reshape(-1)
-        frame = cv2.circle(frame, (int(feet_court_pos[0]), int(feet_court_pos[1])), 10, (0, 0, 255), 15)
+        feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mat[i]).reshape(-1)
+        positions.append(feet_court_pos)
+    positions = np.array(positions)
+    smoothed = np.zeros_like(positions)
+    smoothed[:, 0] = signal.savgol_filter(positions[:, 0], 7, 2)
+    smoothed[:, 1] = signal.savgol_filter(positions[:, 1], 7, 2)
+
+    for feet_pos in smoothed:
+        frame = court.copy()
+        frame = cv2.circle(frame, (int(feet_pos[0]), int(feet_pos[1])), 10, (0, 0, 255), 15)
         out.write(frame)
     out.release()
     cv2.destroyAllWindows()
@@ -173,11 +181,11 @@ def video_process(video_path, show_video=False, include_video=True,
                 print(f'Court detection {"Success" if court_detector.success_flag else "Failed"}')
                 print(f'Time to detect court :  {time.time() - start_time} seconds')
                 start_time = time.time()
-            if court:
-                court_detector.track_court(frame)
 
-                '''if court_detector.check_court_movement(frame):
-                    court_detector.detect(frame)'''
+            court_detector.track_court(frame)
+
+            '''if court_detector.check_court_movement(frame):
+                court_detector.detect(frame)'''
 
             # initialize landmarks lists
             stickman_marks = np.zeros_like(frame)
@@ -192,9 +200,11 @@ def video_process(video_path, show_video=False, include_video=True,
             # Combine all landmarks
             # TODO clean this shit
             total_marks = np.clip(stickman_marks + boxes, 0, 255)
-            mask = total_marks == 0
-            frame = frame * mask + total_marks if include_video else total_marks
-            frame = court_detector.add_court_overlay(frame, overlay_color=(0, 0, 255))
+            mask = np.sum(total_marks, axis=2)
+            frame[mask != 0, :] = [0,0,0]
+            frame = frame + total_marks if include_video else total_marks
+            if court:
+                frame = court_detector.add_court_overlay(frame, overlay_color=(0, 0, 255))
             # Output frame and save it
             if show_video:
                 cv2.imshow('frame', frame)
@@ -229,10 +239,11 @@ def video_process(video_path, show_video=False, include_video=True,
 
         smoothing_output_file = output_file + '_smoothing'
         # add smoothing data to the videos
-        add_data_to_video(video_path, df_smooth, show_video, 0, output_folder,
+        add_data_to_video(video_path, df_smooth, show_video, 1, output_folder,
                           smoothing_output_file, get_stickman_line_connection(), court_detector)
 
 
 s = time.time()
-video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False, court=True, top_view=False)
+video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
+              court=False, top_view=False)
 print(f'Total computation time : {time.time() - s} seconds')

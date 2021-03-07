@@ -39,22 +39,23 @@ class PoseExtractor:
             if keypoints_scores[a] > self.keypoint_threshold and keypoints_scores[b] > self.keypoint_threshold:
                 p1 = (int(keypoints[a][0]), int(keypoints[a][1]))
                 p2 = (int(keypoints[b][0]), int(keypoints[b][1]))
-                cv2.line(frame, p1, p2, [0, 255, 255])
+                cv2.line(frame, p1, p2, [0, 0, 255], 2)
         # Connect nose to center of torso
         a = 0
         p1 = (int(keypoints[a][0]), int(keypoints[a][1]))
         p2 = (int((keypoints[5][0] + keypoints[6][0]) / 2), int((keypoints[5][1] + keypoints[6][1]) / 2))
-        cv2.line(frame, p1, p2, [0, 255, 255])
+        cv2.line(frame, p1, p2, [0, 0, 255], 2)
         return frame
 
     def extract_pose(self, image, player_boxes):
         """
         extract pose from given image using pose_model
+        :param player_boxes:
         :param image: ndarray, the image we would like to extract the pose from
         :return: frame that include the pose stickman
         """
         height, width = image.shape[:2]
-        margin = 100
+        margin = 50
         xt, yt, xb, yb = player_boxes[-1]
         xt, yt, xb, yb = int(xt), int(yt), int(xb), int(yb)
         patch = image[max(yt - margin, 0):min(yb + margin, height), max(xt - margin, 0):min(xb + margin, width)].copy()
@@ -91,7 +92,7 @@ class PoseExtractor:
                     if key_point_score > self.keypoint_threshold:
                         x_data.append(x.item() + max(xt - margin, 0))
                         y_data.append(y.item() + max(yt - margin, 0))
-                        cv2.circle(patch_zeros, (int(x), int(y)), 3, [255, 0, 0])
+                        cv2.circle(patch_zeros, (int(x), int(y)), 2, [255, 0, 0], 2)
                     else:
                         # if the keypoint was not found we add None
                         # in the smoothing section we will try to complete the missing data

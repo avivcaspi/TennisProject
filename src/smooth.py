@@ -1,5 +1,8 @@
 from scipy import signal
 import os
+import numpy as np
+from scipy import stats
+import pandas as pd
 
 
 class Smooth:
@@ -26,9 +29,14 @@ class Smooth:
             df = df.fillna(method='bfill', limit=3)
             # save filled data spots
             mask = df.isnull()
+
             # fill all slots to be able to smooth
             df = df.fillna(method='ffill')
             df = df.fillna(method='bfill')
+
+            for col in df.columns:
+                df.loc[:, col], detected_outliers = hampel_filter_pandas(df.loc[:, col], self.window_length)
+
             # smooth each column in the data frame
             for i in range(len(df.columns)):
                 if df.iloc[0, i] is not None:
@@ -40,6 +48,30 @@ class Smooth:
         print('Smoothing completed')
         return self.df_smooth
 
+    def _swap_sides(self, df):
+        body_parts = [
+            'eye', 'ear', 'shoulder', 'elbow',
+            'wrist', 'hip', 'knee', 'ankle'
+        ]
+        prev_row = df.iloc[0, :]
+        for index, curr_row in df.iloc[1:, :].iterrows():
+            for part in body_parts:
+                curr_left_part = np.array([curr_row[f'left_{part}_x'], curr_row[f'left_{part}_y']])
+                curr_right_part = np.array([curr_row[f'right_{part}_x'], curr_row[f'right_{part}_y']])
+                prev_left_part = np.array([prev_row[f'left_{part}_x'], prev_row[f'left_{part}_y']])
+                prev_right_part = np.array([prev_row[f'right_{part}_x'], prev_row[f'right_{part}_y']])
+
+                if np.linalg.norm(curr_right_part - prev_right_part) > np.linalg.norm(curr_right_part - prev_left_part) \
+                        or np.linalg.norm(curr_left_part - prev_left_part) > np.linalg.norm(curr_left_part - prev_right_part):
+                    temp = curr_row[f'left_{part}_x'].copy()
+                    curr_row[f'left_{part}_x'] = curr_row[f'right_{part}_x'].copy()
+                    curr_row[f'right_{part}_x'] = temp
+                    temp = curr_row[f'left_{part}_y'].copy()
+                    curr_row[f'left_{part}_y'] = curr_row[f'right_{part}_y'].copy()
+                    curr_row[f'right_{part}_y'] = temp
+
+            prev_row = curr_row
+
     def save_to_csv(self, output_folder):
         """
         Saves the data frames after smoothing
@@ -50,5 +82,25 @@ class Smooth:
             self.df_smooth.to_csv(outfile_path, index=False)
 
 
+def hampel_filter_pandas(input_series, window_size, n_sigmas=2):
+    k = 1.4826  # scale factor for Gaussian distribution
+    new_series = input_series.copy()
+
+    # helper lambda function
+    MAD = lambda x: np.median(np.abs(x - np.median(x)))
+
+    rolling_median = input_series.rolling(window=2 * window_size, center=True).median()
+    rolling_mad = k * input_series.rolling(window=2 * window_size, center=True).apply(MAD)
+    diff = np.abs(input_series - rolling_median)
+
+    indices = list(np.argwhere((diff > (n_sigmas * rolling_mad)).values).flatten())
+    new_series[indices] = rolling_median[indices]
+
+    return new_series, indices
 
 
+if __name__ == "__main__":
+    df = pd.read_csv('output/stickman_data.csv')
+
+    smoother = Smooth()
+    smoother.smooth(df)
