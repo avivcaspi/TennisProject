@@ -14,7 +14,7 @@ from sklearn.model_selection import train_test_split
 class ThetisDataset(Dataset):
     """ THETIS dataset."""
 
-    def __init__(self, csv_file, root_dir, transform=None, train=True):
+    def __init__(self, csv_file, root_dir, transform=None, train=True, features=True, three_classes=True):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -22,44 +22,75 @@ class ThetisDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.patches_name = pd.read_csv(csv_file)
+        self.videos_name = pd.read_csv(csv_file)
         self.root_dir = root_dir
         self.transform = transform
         self.train = train
+        self.features = features
+        self.three_classes = {'forehand': 0, 'backhand': 1, 'service': 2, 'smash': 2}
 
     def __len__(self):
-        return len(self.patches_name)
+        return len(self.videos_name)
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
         train_test_str = 'train' if self.train else 'test'
-        label = None
+        label = 0
+        for class_name, class_id in self.three_classes.items():
+            if class_name in self.videos_name.iloc[idx, 0]:
+                label = class_id
+                break
 
-        green_img_name = os.path.join(self.root_dir,
-                                      green_str + self.patches_name.iloc[idx, 0] + '.TIF')
+        video_path = os.path.join(self.root_dir, self.videos_name.iloc[idx, 0], self.videos_name.iloc[idx, 1])
+        features_path = os.path.splitext(video_path)[0] + '.csv'
 
-        if self.train:
-            gt_img_name = os.path.join(self.root_dir,
-                                       gt_str + self.patches_name.iloc[idx, 0] + '.TIF')
-            gt_img = io.imread(gt_img_name) / 255
-
-        red_img = np.expand_dims(io.imread(red_img_name) / 65535, axis=-1)
-        green_img = np.expand_dims(io.imread(green_img_name) / 65535, axis=-1)
-        blue_img = np.expand_dims(io.imread(blue_img_name) / 65535, axis=-1)
-
-        image = np.concatenate([red_img, green_img, blue_img], axis=-1)
-
-        sample = {'image': image, 'gt': gt_img, 'patch_name': self.patches_name.iloc[idx, 0]}
+        vid_frames = video_to_frames(video_path)
 
         if self.transform:
-            sample = self.transform(sample)
+            frames = []
+            for frame in vid_frames:
+                frame = self.transform(frame)
+                frames.append(frame)
 
+            vid_frames = torch.stack(frames)
+        sample = {'frames': vid_frames, 'gt': label,
+                  'vid_folder': self.videos_name.iloc[idx, 0], 'vid_name': self.videos_name.iloc[idx, 1]}
+        if self.features:
+            vid_features = pd.read_csv(features_path)
+            sample['features'] = vid_features
         return sample
 
-    if __name__ == '__main__':
-        dataset = ThetisDataset('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv', '../dataset/THETIS/VIDEO_RGB/',
-                                  transform=transforms.Compose([Rescale(192), ToTensor()]), weakly=True, train=False)
-        print(len(dataset))
 
+def video_to_frames(video_filename):
+    """Extract frames from video"""
+    cap = cv2.VideoCapture(video_filename)
+    video_length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) - 1
+    frames = []
+    if cap.isOpened() and video_length > 0:
+        count = 0
+        success, image = cap.read()
+        while success:
+            frames.append(image)
+            success, image = cap.read()
+            count += 1
+    cap.release()
+    return np.array(frames)
+
+
+if __name__ == '__main__':
+    dataset = ThetisDataset('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv', '../dataset/THETIS/VIDEO_RGB/')
+    print(len(dataset))
+    vid = dataset[0]
+    a = 0
+    '''rootdir = '../dataset/THETIS/VIDEO_RGB/'
+    data = []
+    for subdir, dirs, files in os.walk(rootdir):
+        for file in files:
+            data.append([os.path.split(subdir)[-1], file])
+            print([os.path.split(subdir)[-1], file])
+    df = pd.DataFrame(data, columns=['folder', 'name'])
+    outfile_path = os.path.join(rootdir, 'THETIS_data.csv')
+    df.to_csv(outfile_path, index=False)
+'''

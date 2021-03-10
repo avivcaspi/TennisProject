@@ -1,11 +1,16 @@
+import os
+
 import torch
 import torchvision
 import numpy as np
 import cv2
 from torchvision import transforms
 import torch.nn as nn
+from torchvision.transforms import ToTensor
 
+from src.datasets import ThetisDataset
 from utils import get_dtype
+import pandas as pd
 
 
 class Identity(nn.Module):
@@ -52,21 +57,59 @@ class ActionRecognition(nn.Module):
                 torch.zeros(self.num_layers, batch_size, self.hidden_size).type(self.dtype))
 
 
+def create_features_from_vids():
+    dtype = get_dtype()
+    feature_extractor = FeatureExtractor()
+    feature_extractor.eval()
+    feature_extractor.type(dtype)
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
+
+    dataset = ThetisDataset('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv', '../dataset/THETIS/VIDEO_RGB/',
+                            transform=transforms.Compose([ToTensor(), normalize]))
+    batch_size = 32
+    count = 0
+    for vid in dataset:
+        count += 1
+        frames = vid['frames']
+        print(len(frames))
+
+        features = []
+        for batch in frames.split(batch_size):
+            batch = batch.type(dtype)
+            with torch.no_grad():
+                # forward pass
+                batch_features = feature_extractor(batch)
+                features.append(batch_features.cpu().numpy())
+
+        df = pd.DataFrame(np.concatenate(features, axis=0))
+
+        outfile_path = os.path.join('../dataset/THETIS/VIDEO_RGB/', vid['vid_folder'],
+                                    os.path.splitext(vid['vid_name'])[0] + '.csv')
+        df.to_csv(outfile_path, index=False)
+
+        print(count)
+
+
 if __name__ == "__main__":
     dtype = get_dtype()
     feature_extractor = FeatureExtractor()
-    model = ActionRecognition(3, dtype=dtype)
+    #model = ActionRecognition(3, dtype=dtype)
     feature_extractor.eval()
 
     feature_extractor.type(dtype)
-    model.type(dtype)
+    #model.type(dtype)
     batch_size = 1
     seq_len = 60
     hidden_size = 90
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    batch = None
+    dataset = ThetisDataset('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv', '../dataset/THETIS/VIDEO_RGB/',
+                            transform=transforms.Compose([ToTensor(), normalize]))
+    a = dataset[0]
+    a = dataset[1700]
+    '''batch = None
     video = cv2.VideoCapture('../videos/vid1.mp4')
     while True:
         ret, frame = video.read()
@@ -83,11 +126,14 @@ if __name__ == "__main__":
             else:
                 batch = torch.cat([batch, features], dim=1)
             if batch.size(1) > seq_len:
+                # TODO this might be problem, need to get the vector out of gpu
+                remove = batch[:,0,:]
+                remove.detach().cpu()
                 batch = batch[:, 1:, :]
                 output = model(batch)
         else:
             break
     video.release()
 
-    cv2.destroyAllWindows()
+    cv2.destroyAllWindows()'''
 
