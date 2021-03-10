@@ -14,7 +14,7 @@ from sklearn.model_selection import train_test_split
 class ThetisDataset(Dataset):
     """ THETIS dataset."""
 
-    def __init__(self, csv_file, root_dir, transform=None, train=True, features=True, three_classes=True):
+    def __init__(self, csv_file, root_dir, transform=None, train=True, use_features=True, three_classes=True, features_len=100):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -26,8 +26,9 @@ class ThetisDataset(Dataset):
         self.root_dir = root_dir
         self.transform = transform
         self.train = train
-        self.features = features
+        self.use_features = use_features
         self.three_classes = {'forehand': 0, 'backhand': 1, 'service': 2, 'smash': 2}
+        self.features_len = features_len
 
     def __len__(self):
         return len(self.videos_name)
@@ -46,20 +47,31 @@ class ThetisDataset(Dataset):
         video_path = os.path.join(self.root_dir, self.videos_name.iloc[idx, 0], self.videos_name.iloc[idx, 1])
         features_path = os.path.splitext(video_path)[0] + '.csv'
 
-        vid_frames = video_to_frames(video_path)
-
-        if self.transform:
-            frames = []
-            for frame in vid_frames:
-                frame = self.transform(frame)
-                frames.append(frame)
-
-            vid_frames = torch.stack(frames)
-        sample = {'frames': vid_frames, 'gt': label,
+        sample = {'gt': label,
                   'vid_folder': self.videos_name.iloc[idx, 0], 'vid_name': self.videos_name.iloc[idx, 1]}
-        if self.features:
+        if not self.use_features:
+            vid_frames = video_to_frames(video_path)
+
+            if self.transform:
+                frames = []
+                for frame in vid_frames:
+                    frame = self.transform(frame)
+                    frames.append(frame)
+
+                vid_frames = torch.stack(frames)
+            sample['frames'] = vid_frames
+        else:
             vid_features = pd.read_csv(features_path)
-            sample['features'] = vid_features
+            diff = self.features_len - len(vid_features)
+            if diff > 0:
+                zeros_df = pd.DataFrame(np.zeros((diff, len(vid_features.columns))), columns=vid_features.columns)
+                vid_features = vid_features.append(zeros_df, ignore_index=True)
+                # vid_frames = torch.cat([vid_frames, torch.zeros((diff, *vid_frames[0].size()))])
+            if diff < 0:
+                vid_features = vid_features.iloc[:100, :]
+                # vid_frames = vid_frames[:100, :, :, :]
+            sample['features'] = torch.Tensor(vid_features.values)
+            #sample['frames'] = vid_frames
         return sample
 
 

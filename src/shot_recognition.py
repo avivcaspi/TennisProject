@@ -4,11 +4,13 @@ import torch
 import torchvision
 import numpy as np
 import cv2
+from torch.utils.data import DataLoader
 from torchvision import transforms
 import torch.nn as nn
 from torchvision.transforms import ToTensor
 
 from src.datasets import ThetisDataset
+from src.trainer import Trainer
 from utils import get_dtype
 import pandas as pd
 
@@ -41,7 +43,6 @@ class ActionRecognition(nn.Module):
         self.hidden_size = hidden_size
         self.LSTM = nn.LSTM(input_size, hidden_size, num_layers, bias=True, batch_first=True)
         self.fc = nn.Linear(hidden_size, num_classes)
-        self.softmax = nn.Softmax(num_classes)
 
     def forward(self, x):
         # x shape is (batch_size, seq_len, input_size)
@@ -93,22 +94,22 @@ def create_features_from_vids():
 
 if __name__ == "__main__":
     dtype = get_dtype()
-    feature_extractor = FeatureExtractor()
-    #model = ActionRecognition(3, dtype=dtype)
-    feature_extractor.eval()
+    #feature_extractor = FeatureExtractor()
+    model = ActionRecognition(3, dtype=dtype)
+    #feature_extractor.eval()
 
-    feature_extractor.type(dtype)
-    #model.type(dtype)
-    batch_size = 1
-    seq_len = 60
-    hidden_size = 90
+    #feature_extractor.type(dtype)
+    model.type(dtype)
+    batch_size = 16
+
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
     dataset = ThetisDataset('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv', '../dataset/THETIS/VIDEO_RGB/',
-                            transform=transforms.Compose([ToTensor(), normalize]))
-    a = dataset[0]
-    a = dataset[1700]
+                            transform=transforms.Compose([ToTensor(), normalize]), use_features=True)
+    dl = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    trainer = Trainer(model, dl)
+    trainer.train(50)
     '''batch = None
     video = cv2.VideoCapture('../videos/vid1.mp4')
     while True:
