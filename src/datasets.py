@@ -63,13 +63,13 @@ class ThetisDataset(Dataset):
         else:
             vid_features = pd.read_csv(features_path)
             diff = self.features_len - len(vid_features)
-            if diff > 0:
+            '''if diff > 0:
                 zeros_df = pd.DataFrame(np.zeros((diff, len(vid_features.columns))), columns=vid_features.columns)
                 vid_features = vid_features.append(zeros_df, ignore_index=True)
                 # vid_frames = torch.cat([vid_frames, torch.zeros((diff, *vid_frames[0].size()))])
             if diff < 0:
                 vid_features = vid_features.iloc[:100, :]
-                # vid_frames = vid_frames[:100, :, :, :]
+                # vid_frames = vid_frames[:100, :, :, :]'''
             sample['features'] = torch.Tensor(vid_features.values)
             #sample['frames'] = vid_frames
         return sample

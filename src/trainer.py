@@ -34,6 +34,7 @@ class Trainer:
         # Extras
         self.softmax = nn.Softmax(dim=1)
         self.saved_state_name = 'saved_state'
+        print(f'Learning rate = {lr}')
 
     def train(self, epochs=1):
         start = time.time()
@@ -95,11 +96,12 @@ class Trainer:
                     running_acc += acc * dataloader.batch_size
                     running_loss += loss.item() * dataloader.batch_size
 
-                    if step % 5 == 0:
+                    if step % 300 == 0:
                         # clear_output(wait=True)
                         print(f'Current step: {step}  Loss: {loss.item()}  Acc: {acc} '
                               f'AllocMem (Mb): '
-                              f'{torch.cuda.memory_allocated() / 1024 / 1024}')
+                              f'{torch.cuda.memory_allocated() / 1024 / 1024} '
+                              f'Prediction: {y_pred}  real: {y}')
 
                         # print(torch.cuda.memory_summary())
 
@@ -125,4 +127,16 @@ class Trainer:
         print(f'*** Saved checkpoint ***')
         # print(f'Finding best threshold:')
         # find_best_threshold(model, valid_dl)
+
+        plot_graph(train_loss, valid_loss, 'loss', f'../report/losses.png')
+
         return train_loss, valid_loss, train_acc, valid_acc
+
+
+def plot_graph(train_data, valid_data, data_type, destination):
+    plt.figure(figsize=(10, 8))
+    plt.plot(train_data, label=f'Train {data_type}')
+    plt.plot(valid_data, label=f'Valid {data_type}')
+    plt.legend()
+    plt.savefig(destination)
+    plt.show()

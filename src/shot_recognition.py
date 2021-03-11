@@ -100,7 +100,7 @@ if __name__ == "__main__":
 
     #feature_extractor.type(dtype)
     model.type(dtype)
-    batch_size = 16
+    batch_size = 1
 
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
@@ -108,8 +108,9 @@ if __name__ == "__main__":
     dataset = ThetisDataset('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv', '../dataset/THETIS/VIDEO_RGB/',
                             transform=transforms.Compose([ToTensor(), normalize]), use_features=True)
     dl = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    trainer = Trainer(model, dl)
-    trainer.train(50)
+    for lr in [0.00003, 0.00005]:
+        trainer = Trainer(model, dl, lr=lr)
+        trainer.train(150)
     '''batch = None
     video = cv2.VideoCapture('../videos/vid1.mp4')
     while True:
