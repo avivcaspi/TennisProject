@@ -78,6 +78,11 @@ class CourtReference:
             mask[:self.net[0][1] - 1000, :] = 0
         elif mask_type == 2:  # Top half court
             mask[self.net[0][1]:, :] = 0
+        elif mask_type == 3: # court without margins
+            mask[:self.baseline_top[0][1], :] = 0
+            mask[self.baseline_bottom[0][1]:, :] = 0
+            mask[:, :self.left_court_line[0][0]] = 0
+            mask[:, self.right_court_line[0][0]:] = 0
         return mask
 
 
