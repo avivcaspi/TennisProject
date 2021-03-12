@@ -13,7 +13,7 @@ import cv2
 
 
 class Trainer:
-    def __init__(self, model, dataloader, lr=0.001, reg=0.003):
+    def __init__(self, model, train_dl, valid_dl, lr=0.001, reg=0.003):
         # Using cuda if possible
         self.dtype = get_dtype()
 
@@ -21,11 +21,12 @@ class Trainer:
         self.model = model
 
         # Dataset and data loaders
-        self.train_dl = dataloader
+        self.train_dl = train_dl
+        self.valid_dl = valid_dl
 
         # Optimizer and schedule
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=reg)
-        self.lr_scheduler = ReduceLROnPlateau(self.optimizer, mode='min', factor=0.96, patience=3, verbose=True,
+        self.lr_scheduler = ReduceLROnPlateau(self.optimizer, mode='min', factor=0.3, patience=3, verbose=True,
                                               min_lr=1e-8)
 
         # Loss function
@@ -50,11 +51,13 @@ class Trainer:
             print('Epoch {}/{}'.format(epoch, epochs))
             print('-' * 10)
             flag = True
-            for phase in ['train']:
-                dataloader = None
+            for phase in ['train', 'valid']:
                 if phase == 'train':
                     self.model.train(True)  # Set training mode = true
                     dataloader = self.train_dl
+                else:
+                    self.model.train(False)  # Set model to evaluate mode
+                    dataloader = self.valid_dl
 
                 running_loss = 0.0
                 running_acc = 0.0
@@ -84,9 +87,7 @@ class Trainer:
                     else:
                         with torch.no_grad():
                             outputs = self.model(x)
-                            args = [outputs, y.long()]
-
-                            loss = self.loss_fn(*args)
+                            loss = self.loss_fn(outputs, y.long())
 
                     # stats - whatever is the phase
 
@@ -117,6 +118,7 @@ class Trainer:
                 train_acc.append(epoch_acc) if phase == 'train' else valid_acc.append(epoch_acc)
 
                 if phase == 'valid':
+
                     self.lr_scheduler.step(epoch_loss)
 
         time_elapsed = time.time() - start

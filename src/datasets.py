@@ -17,12 +17,12 @@ class ThetisDataset(Dataset):
     def __init__(self, csv_file, root_dir, transform=None, train=True, use_features=True, three_classes=True, features_len=100):
         """
         Args:
-            csv_file (string): Path to the csv file with annotations.
+            csv_file (DataFrame): Path to the csv file with annotations.
             root_dir (string): Directory with all the images.
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.videos_name = pd.read_csv(csv_file)
+        self.videos_name = csv_file
         self.root_dir = root_dir
         self.transform = transform
         self.train = train
@@ -37,7 +37,6 @@ class ThetisDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        train_test_str = 'train' if self.train else 'test'
         label = 0
         for class_name, class_id in self.three_classes.items():
             if class_name in self.videos_name.iloc[idx, 0]:
@@ -91,10 +90,26 @@ def video_to_frames(video_filename):
     return np.array(frames)
 
 
+def create_train_valid_test_datasets(csv_file, root_dir, transform=None):
+    videos_name = pd.read_csv(csv_file)
+    test_player_id = 40
+    test_videos_name = videos_name[
+        videos_name.loc[:, 'name'].str.contains(f'p{test_player_id}', na=False)]
+    remaining_ids = list(range(1, 55))
+    remaining_ids.remove(test_player_id)
+    valid_ids = np.random.choice(remaining_ids, 5, replace=False)
+    mask = videos_name.loc[:, 'name'].str.contains('|'.join([f'p{id}' for id in valid_ids]), na=False)
+    valid_videos_name = videos_name[mask]
+    train_videos = videos_name.drop(index=test_videos_name.index.union(valid_videos_name.index))
+    train_ds = ThetisDataset(train_videos, root_dir, transform=transform)
+    valid_ds = ThetisDataset(valid_videos_name, root_dir, transform=transform)
+    test_ds = ThetisDataset(test_videos_name, root_dir, transform=transform)
+    return train_ds, valid_ds, test_ds
+
+
 if __name__ == '__main__':
-    dataset = ThetisDataset('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv', '../dataset/THETIS/VIDEO_RGB/')
-    print(len(dataset))
-    vid = dataset[0]
+    train,valid,test = create_train_valid_test_datasets('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv', '../dataset/THETIS/VIDEO_RGB/')
+
     a = 0
     '''rootdir = '../dataset/THETIS/VIDEO_RGB/'
     data = []

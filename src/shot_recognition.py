@@ -9,7 +9,7 @@ from torchvision import transforms
 import torch.nn as nn
 from torchvision.transforms import ToTensor
 
-from src.datasets import ThetisDataset
+from src.datasets import ThetisDataset, create_train_valid_test_datasets
 from src.trainer import Trainer
 from utils import get_dtype
 import pandas as pd
@@ -94,23 +94,30 @@ def create_features_from_vids():
 
 if __name__ == "__main__":
     dtype = get_dtype()
-    #feature_extractor = FeatureExtractor()
-    model = ActionRecognition(3, dtype=dtype)
-    #feature_extractor.eval()
+    # feature_extractor = FeatureExtractor()
 
-    #feature_extractor.type(dtype)
-    model.type(dtype)
+    # feature_extractor.eval()
+
+    # feature_extractor.type(dtype)
+
     batch_size = 1
 
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    dataset = ThetisDataset('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv', '../dataset/THETIS/VIDEO_RGB/',
-                            transform=transforms.Compose([ToTensor(), normalize]), use_features=True)
-    dl = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    for lr in [0.00003, 0.00005]:
-        trainer = Trainer(model, dl, lr=lr)
-        trainer.train(150)
+    train_ds, valid_ds, test_ds = create_train_valid_test_datasets('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv',
+                                                                   '../dataset/THETIS/VIDEO_RGB/',
+                                                                   transform=transforms.Compose(
+                                                                       [ToTensor(), normalize]))
+    print(f'Train size : {len(train_ds)}, Validation size : {len(valid_ds)}')
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    valid_dl = DataLoader(valid_ds, batch_size=batch_size, shuffle=True)
+
+    for lr in [0.00003]:
+        model = ActionRecognition(3, dtype=dtype)
+        model.type(dtype)
+        trainer = Trainer(model, train_dl, valid_dl, lr=lr)
+        trainer.train(25)
     '''batch = None
     video = cv2.VideoCapture('../videos/vid1.mp4')
     while True:
@@ -138,4 +145,3 @@ if __name__ == "__main__":
     video.release()
 
     cv2.destroyAllWindows()'''
-
