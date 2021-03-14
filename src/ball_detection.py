@@ -44,9 +44,9 @@ while True:
     if not ret:
         break
     frame_i += 1
-    '''if frame_i == 1:
+    if frame_i == 1:
         court_detector.detect(frame)
-    court_detector.track_court(frame)'''
+    court_detector.track_court(frame)
 
     mask = cv2.cvtColor(frame.copy(), cv2.COLOR_BGR2GRAY)
     mask = cv2.medianBlur(mask, 3)
@@ -55,10 +55,10 @@ while True:
     fgMask = cv2.dilate(fgMask, np.ones((10, 10)))
     fgMask = cv2.morphologyEx(fgMask, cv2.MORPH_HITMISS, np.ones((10, 10)))
 
-    '''white_ref = court_detector.court_reference.get_court_mask()
-    white_mask = cv2.warpPerspective(white_ref, court_detector.court_warp_matrix[-1], frame.shape[1::-1])'''
+    white_ref = court_detector.court_reference.get_court_mask()
+    white_mask = cv2.warpPerspective(white_ref, court_detector.court_warp_matrix[-1], frame.shape[1::-1])
     image_court = frame.copy()
-    #image_court[white_mask == 0, :] = (0, 0, 0)
+    image_court[white_mask == 0, :] = (0, 0, 0)
     image_court[fgMask == 0, :] = (0, 0, 0)
     # Detect blobs
     keypoints = detector.detect(image_court)

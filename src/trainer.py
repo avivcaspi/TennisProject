@@ -1,5 +1,10 @@
 import torch
 import torch.nn as nn
+from torchvision.transforms import ToTensor
+
+from src.datasets import create_train_valid_test_datasets
+from src.shot_recognition import LSTM_model
+
 from src.utils import get_dtype
 import time
 from torchvision import transforms
@@ -118,7 +123,6 @@ class Trainer:
                 train_acc.append(epoch_acc) if phase == 'train' else valid_acc.append(epoch_acc)
 
                 if phase == 'valid':
-
                     self.lr_scheduler.step(epoch_loss)
 
         time_elapsed = time.time() - start
@@ -131,6 +135,7 @@ class Trainer:
         # find_best_threshold(model, valid_dl)
 
         plot_graph(train_loss, valid_loss, 'loss', f'../report/losses.png')
+        plot_graph(train_acc, valid_acc, 'accuracy', f'../report/accuracy.png')
 
         return train_loss, valid_loss, train_acc, valid_acc
 
@@ -142,3 +147,49 @@ def plot_graph(train_data, valid_data, data_type, destination):
     plt.legend()
     plt.savefig(destination)
     plt.show()
+
+
+def evaluate_performance(model, test_dl):
+    is_cuda = next(model.parameters()).is_cuda
+    dtype = torch.cuda.FloatTensor if is_cuda else torch.FloatTensor
+    softmax = nn.Softmax(dim=1)
+
+    model.train(False)
+    acc = 0
+    for sample_batched in test_dl:
+        x = sample_batched['features'].type(dtype)
+        y = sample_batched['gt'].type(dtype)
+
+        with torch.no_grad():
+            outputs = model(x)
+            outputs = softmax(outputs)
+            y_pred = torch.argmax(outputs, 1)
+            acc += accuracy_score(y.detach().cpu().numpy(), y_pred.detach().cpu().numpy())
+
+    accuracy = acc / len(test_dl.dataset)
+    print(f'Test accuracy = {accuracy}')
+
+
+def train():
+    dtype = get_dtype()
+    batch_size = 1
+
+    train_ds, valid_ds, test_ds = create_train_valid_test_datasets('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv',
+                                                                   '../dataset/THETIS/VIDEO_RGB/',
+                                                                   )
+    print(f'Train size : {len(train_ds)}, Validation size : {len(valid_ds)}')
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    valid_dl = DataLoader(valid_ds, batch_size=batch_size, shuffle=True)
+    test_dl = DataLoader(test_ds, batch_size=batch_size, shuffle=True)
+
+    for lr in [0.001, 0.00003, 0.00005, 0.0001]:
+        model = LSTM_model(3, dtype=dtype)
+        model.type(dtype)
+        trainer = Trainer(model, train_dl, valid_dl, lr=lr)
+        trainer.train(30)
+        print('Test accuracy')
+        evaluate_performance(model, test_dl)
+
+
+if __name__ == "__main__":
+    train()
