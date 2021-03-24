@@ -49,8 +49,9 @@ class LSTM_model(nn.Module):
         # x shape is (batch_size, seq_len, input_size)
         h0, c0 = self.init_state(x.size(0))
         output, (hn, cn) = self.LSTM(x, (h0, c0))
-        output = output[:, -1, :]
-        scores = self.fc(output)
+        size = x.size(1) * 3 // 4
+        output = output[:, -size:, :]
+        scores = self.fc(output.squeeze(0))
         # scores shape is (batch_size, num_classes)
         return scores
 
@@ -74,7 +75,7 @@ class ActionRecognition:
         self.LSTM.eval()
         self.LSTM.type(self.dtype)
         self.frames_features_seq = None
-        self.box_margin = 100
+        self.box_margin = 150
         self.softmax = nn.Softmax(dim=1)
         self.strokes_label = ['Forehand', 'Backhand', 'Service/Smash']
 
@@ -95,12 +96,11 @@ class ActionRecognition:
         else:
             self.frames_features_seq = torch.cat([self.frames_features_seq, features], dim=1)
         if self.frames_features_seq.size(1) > self.max_seq_len:
-            # TODO this might be problem, need to get the vector out of gpu
             remove = self.frames_features_seq[:, 0, :]
             remove.detach().cpu()
             self.frames_features_seq = self.frames_features_seq[:, 1:, :]
         with torch.no_grad():
-            scores = self.LSTM(self.frames_features_seq)
+            scores = self.LSTM(self.frames_features_seq)[-1].unsqueeze(0)
             probs = self.softmax(scores).squeeze().cpu().numpy()
         return probs, self.strokes_label[np.argmax(probs)]
 

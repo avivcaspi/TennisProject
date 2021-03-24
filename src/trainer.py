@@ -74,7 +74,7 @@ class Trainer:
                 # iterate over data
                 for sample_batched in dataloader:
                     x = sample_batched['features'].type(self.dtype)
-                    y = sample_batched['gt'].type(self.dtype)
+                    y = sample_batched['gt'].type(self.dtype).squeeze()
                     step += 1
 
                     # forward pass
@@ -199,9 +199,9 @@ def train_strokes():
     batch_size = 1
     root_dir = '../dataset/my_dataset/patches/'
     train_ds = StrokesDataset(csv_file='../dataset/my_dataset/patches/train_labels.csv', root_dir=root_dir,
-                              transform=None, train=True, use_features=True)
+                              transform=None, train=True, use_features=True, y_full=2)
     valid_ds = StrokesDataset(csv_file='../dataset/my_dataset/patches/valid_labels.csv', root_dir=root_dir,
-                              transform=None, train=True, use_features=True)
+                              transform=None, train=True, use_features=True, y_full=2)
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     valid_dl = DataLoader(valid_ds, batch_size=batch_size, shuffle=True)
     print(f'train set size is : {len(train_ds)}')

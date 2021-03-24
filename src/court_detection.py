@@ -335,7 +335,7 @@ class CourtDetector:
 
             new_points = []
             for p in points_on_line:
-                p = (round(p[0]), round(p[1]))
+                p = (int(round(p[0])), int(round(p[1])))
                 top_y, top_x = max(p[1] - dist, 0), max(p[0] - dist, 0)
                 bottom_y, bottom_x = min(p[1] + dist, self.v_height), min(p[0] + dist, self.v_width)
                 patch = gray[top_y: bottom_y, top_x: bottom_x]

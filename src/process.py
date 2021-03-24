@@ -153,7 +153,7 @@ def video_process(video_path, show_video=False, include_video=True,
     court_detector = CourtDetector()
     detection_model = DetectionModel(dtype=dtype)
     pose_extractor = PoseExtractor(person_num=1, box=stickman_box, dtype=dtype) if stickman else None
-    shot_recognition = ActionRecognition('saved_state_3e-5_86%')
+    shot_recognition = ActionRecognition('saved_state_strokes_3e-05')
 
     # Load videos from videos path
     video = cv2.VideoCapture(video_path)
@@ -199,19 +199,19 @@ def video_process(video_path, show_video=False, include_video=True,
             if stickman:
                 stickman_marks = pose_extractor.extract_pose(frame, detection_model.player_1_boxes)
 
-            #probs, stroke = shot_recognition.predict_stroke(frame, detection_model.player_1_boxes[-1])
+            probs, stroke = shot_recognition.predict_stroke(frame, detection_model.player_1_boxes[-1])
             # Combine all landmarks
             # TODO clean this shit
             total_marks = np.clip(stickman_marks + boxes, 0, 255)
             mask = np.sum(total_marks, axis=2)
-            frame[mask != 0, :] = [0,0,0]
+            frame[mask != 0, :] = [0, 0, 0]
             frame = frame + total_marks if include_video else total_marks
-            '''cv2.putText(frame, 'Forehand - {:.2f}, Backhand - {:.2f}, Service - {:.2f}'.format(*probs),
+            cv2.putText(frame, 'Forehand - {:.2f}, Backhand - {:.2f}, Service - {:.2f}'.format(*probs),
                         (100, 100),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
             cv2.putText(frame, f'Stroke : {stroke}',
-                        (100, 160),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)'''
+                        (detection_model.player_1_boxes[-1][0] - 10, detection_model.player_1_boxes[-1][1] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
 
             if court:
                 frame = court_detector.add_court_overlay(frame, overlay_color=(0, 0, 255))
@@ -254,6 +254,6 @@ def video_process(video_path, show_video=False, include_video=True,
 
 
 s = time.time()
-video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
+video_process(video_path='../videos/vid24.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
               court=False, top_view=False)
 print(f'Total computation time : {time.time() - s} seconds')

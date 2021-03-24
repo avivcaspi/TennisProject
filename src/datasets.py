@@ -77,7 +77,7 @@ class ThetisDataset(Dataset):
 class StrokesDataset(Dataset):
     """ Strokes dataset."""
 
-    def __init__(self, csv_file, root_dir, transform=None, train=True, use_features=True):
+    def __init__(self, csv_file, root_dir, transform=None, train=True, use_features=True, y_full=0):
         """
         Args:
             csv_file (DataFrame): Path to the csv file with annotations.
@@ -91,6 +91,7 @@ class StrokesDataset(Dataset):
         self.train = train
         self.use_features = use_features
         self.three_classes = {'forehand': 0, 'backhand': 1, 'service': 2, 'smash': 2}
+        self.y_full = y_full
 
     def __len__(self):
         return len(self.df)
@@ -119,6 +120,17 @@ class StrokesDataset(Dataset):
         else:
             vid_features = pd.read_csv(features_path)
             sample['features'] = torch.Tensor(vid_features.values)
+            if self.y_full == 1:
+                label = np.array([label] * vid_features.shape[0])
+                sample['gt'] = label
+            elif self.y_full == 2:
+                labels_size = vid_features.shape[0] * 3 // 4
+                label = np.array([label] * labels_size)
+                sample['gt'] = label
+
+
+
+
         return sample
 
 
