@@ -10,7 +10,7 @@ from torchvision import transforms
 import torch.nn as nn
 from torchvision.transforms import ToTensor
 
-from src.datasets import ThetisDataset, create_train_valid_test_datasets
+from src.datasets import ThetisDataset, create_train_valid_test_datasets, StrokesDataset
 from src.detection import center_of_box
 from utils import get_dtype
 import pandas as pd
@@ -113,8 +113,8 @@ def create_features_from_vids():
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    dataset = ThetisDataset('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv', '../dataset/THETIS/VIDEO_RGB/',
-                            transform=transforms.Compose([ToTensor(), normalize]))
+    dataset = StrokesDataset('../dataset/my_dataset/patches/labels.csv', '../dataset/my_dataset/patches/',
+                            transform=transforms.Compose([ToTensor(), normalize]), use_features=False)
     batch_size = 32
     count = 0
     for vid in dataset:
@@ -132,15 +132,14 @@ def create_features_from_vids():
 
         df = pd.DataFrame(np.concatenate(features, axis=0))
 
-        outfile_path = os.path.join('../dataset/THETIS/VIDEO_RGB/', vid['vid_folder'],
-                                    os.path.splitext(vid['vid_name'])[0] + '.csv')
+        outfile_path = os.path.join('../dataset/my_dataset/patches/',  os.path.splitext(vid['vid_name'])[0] + '.csv')
         df.to_csv(outfile_path, index=False)
 
         print(count)
 
 
 if __name__ == "__main__":
-
+    create_features_from_vids()
     '''batch = None
     video = cv2.VideoCapture('../videos/vid1.mp4')
     while True:

@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 from torchvision.transforms import ToTensor
+import seaborn as sn
 
-from src.datasets import create_train_valid_test_datasets
+from src.datasets import create_train_valid_test_datasets, get_dataloaders, StrokesDataset
 from src.shot_recognition import LSTM_model
 
 from src.utils import get_dtype
@@ -15,6 +16,7 @@ from skimage import io, transform
 from sklearn.metrics import confusion_matrix, accuracy_score
 import numpy as np
 import cv2
+import pandas as pd
 
 
 class Trainer:
@@ -39,7 +41,7 @@ class Trainer:
 
         # Extras
         self.softmax = nn.Softmax(dim=1)
-        self.saved_state_name = 'saved_state'
+        self.saved_state_name = f'saved_state_strokes_{lr}'
         print(f'Learning rate = {lr}')
 
     def train(self, epochs=1):
@@ -170,7 +172,7 @@ def evaluate_performance(model, test_dl):
     print(f'Test accuracy = {accuracy}')
 
 
-def train():
+def train_thetis():
     dtype = get_dtype()
     batch_size = 1
 
@@ -182,14 +184,85 @@ def train():
     valid_dl = DataLoader(valid_ds, batch_size=batch_size, shuffle=True)
     test_dl = DataLoader(test_ds, batch_size=batch_size, shuffle=True)
 
-    for lr in [0.001, 0.00003, 0.00005, 0.0001]:
+    for lr in [0.00003, 0.00003, 0.00003]:
         model = LSTM_model(3, dtype=dtype)
         model.type(dtype)
         trainer = Trainer(model, train_dl, valid_dl, lr=lr)
         trainer.train(30)
         print('Test accuracy')
         evaluate_performance(model, test_dl)
+        get_confusion_matrix('saved_state', valid_dl)
+
+
+def train_strokes():
+    dtype = get_dtype()
+    batch_size = 1
+    root_dir = '../dataset/my_dataset/patches/'
+    train_ds = StrokesDataset(csv_file='../dataset/my_dataset/patches/train_labels.csv', root_dir=root_dir,
+                              transform=None, train=True, use_features=True)
+    valid_ds = StrokesDataset(csv_file='../dataset/my_dataset/patches/valid_labels.csv', root_dir=root_dir,
+                              transform=None, train=True, use_features=True)
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    valid_dl = DataLoader(valid_ds, batch_size=batch_size, shuffle=True)
+    print(f'train set size is : {len(train_ds)}')
+    print(f'validation set size is : {len(valid_ds)}')
+    for lr in [0.00003, 0.00004]:
+        model = LSTM_model(3, dtype=dtype)
+        model.type(dtype)
+        trainer = Trainer(model, train_dl, valid_dl, lr=lr)
+        trainer.train(23)
+        print('Validation accuracy')
+        evaluate_performance(model, valid_dl)
+        get_confusion_matrix(trainer.saved_state_name, valid_dl)
+
+
+def get_confusion_matrix(model_saved_state, dl=None):
+    dtype = get_dtype()
+    LSTM = LSTM_model(3, dtype=dtype)
+    saved_state = torch.load('saved states/' + model_saved_state, map_location='cpu')
+    LSTM.load_state_dict(saved_state['model_state'])
+    LSTM.eval()
+    LSTM.type(dtype)
+    softmax = nn.Softmax(dim=1)
+    if dl is None:
+        train_ds, valid_ds, test_ds = create_train_valid_test_datasets('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv',
+                                                                       '../dataset/THETIS/VIDEO_RGB/')
+        train_dl = DataLoader(train_ds, batch_size=1, shuffle=True)
+        valid_dl = DataLoader(valid_ds, batch_size=1, shuffle=True)
+        test_dl = DataLoader(test_ds, batch_size=1, shuffle=True)
+        dl = test_dl
+    confusion_mat = np.zeros((3, 3), dtype=np.int)
+    for sample_batched in dl:
+        x = sample_batched['features'].type(dtype)
+        y = sample_batched['gt'].numpy()
+
+        with torch.no_grad():
+            outputs = LSTM(x)
+            outputs = softmax(outputs)
+            y_pred = torch.argmax(outputs, 1).cpu().numpy()
+            confusion_mat += confusion_matrix(y, y_pred, labels=[0, 1, 2])
+
+    df_cm = pd.DataFrame(confusion_mat, index=['Forehand', 'Backhand', 'Service/Smash'],
+                         columns=['Forehand', 'Backhand', 'Service/Smash'])
+    plt.figure(figsize=(17, 10))
+    sn.set(font_scale=1.8)
+    heatmap = sn.heatmap(df_cm, annot=True, annot_kws={"size": 24}, cmap="Blues", cbar=False, fmt='g')
+    heatmap.set_yticklabels(heatmap.get_yticklabels(), rotation=0)
+    plt.title('Confusion matrix')
+
+    plt.show()
 
 
 if __name__ == "__main__":
-    train()
+    train_strokes()
+
+    '''confusion_mat = [[30, 12, 0], [8, 33, 1], [0, 2, 40]]
+    df_cm = pd.DataFrame(confusion_mat, index=['Forehand', 'Backhand', 'Service/Smash'],
+                         columns=['Forehand', 'Backhand', 'Service/Smash'])
+    plt.figure(figsize=(17, 10))
+    sn.set(font_scale=1.8)
+    heatmap = sn.heatmap(df_cm, annot=True, annot_kws={"size": 24}, cmap="Blues", cbar=False, fmt='g')
+    heatmap.set_yticklabels(heatmap.get_yticklabels(), rotation=0)
+    plt.title('Confusion matrix')
+
+    plt.show()'''

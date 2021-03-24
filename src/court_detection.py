@@ -429,11 +429,11 @@ def display_lines_and_points_on_frame(frame, lines=(), points=(), line_color=(0,
 
 
 if __name__ == '__main__':
-    filename = '../images/img11.jpg'
+    filename = '../images/img1.jpg'
     img = cv2.imread(filename)
     import time
 
     s = time.time()
-    court_detector = CourtDetector(1)
-    court_detector.detect(img)
+    court_detector = CourtDetector()
+    court_detector.detect(img, 1)
     print(f'time = {time.time() - s}')

@@ -74,6 +74,54 @@ class ThetisDataset(Dataset):
         return sample
 
 
+class StrokesDataset(Dataset):
+    """ Strokes dataset."""
+
+    def __init__(self, csv_file, root_dir, transform=None, train=True, use_features=True):
+        """
+        Args:
+            csv_file (DataFrame): Path to the csv file with annotations.
+            root_dir (string): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.df = pd.read_csv(csv_file)
+        self.root_dir = root_dir
+        self.transform = transform
+        self.train = train
+        self.use_features = use_features
+        self.three_classes = {'forehand': 0, 'backhand': 1, 'service': 2, 'smash': 2}
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        label = self.df.iloc[idx, 1]
+
+        video_path = os.path.join(self.root_dir, self.df.iloc[idx, 0])
+        features_path = os.path.splitext(video_path)[0] + '.csv'
+
+        sample = {'gt': label, 'vid_name': self.df.iloc[idx, 0]}
+        if not self.use_features:
+            vid_frames = video_to_frames(video_path)
+
+            if self.transform:
+                frames = []
+                for frame in vid_frames:
+                    frame = self.transform(frame)
+                    frames.append(frame)
+
+                vid_frames = torch.stack(frames)
+            sample['frames'] = vid_frames
+        else:
+            vid_features = pd.read_csv(features_path)
+            sample['features'] = torch.Tensor(vid_features.values)
+        return sample
+
+
 def video_to_frames(video_filename):
     """Extract frames from video"""
     cap = cv2.VideoCapture(video_filename)
@@ -105,6 +153,19 @@ def create_train_valid_test_datasets(csv_file, root_dir, transform=None):
     valid_ds = ThetisDataset(valid_videos_name, root_dir, transform=transform)
     test_ds = ThetisDataset(test_videos_name, root_dir, transform=transform)
     return train_ds, valid_ds, test_ds
+
+
+def get_dataloaders(csv_file, root_dir, transform, batch_size):
+    ds = StrokesDataset(csv_file=csv_file, root_dir=root_dir, transform=transform, train=True, use_features=True)
+    length = len(ds)
+    train_size = int(0.85 * length)
+    train_ds, valid_ds = torch.utils.data.random_split(ds, (train_size, length - train_size))
+    print(f'train set size is : {train_size}')
+    print(f'validation set size is : {length - train_size}')
+
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    valid_dl = DataLoader(valid_ds, batch_size=batch_size, shuffle=True)
+    return train_dl, valid_dl
 
 
 if __name__ == '__main__':

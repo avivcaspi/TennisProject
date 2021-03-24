@@ -16,6 +16,7 @@ class DetectionModel:
         self.RACKET_LABEL = 43
         self.BALL_LABEL = 37
         self.PERSON_SCORE_MIN = 0.85
+        self.PERSON_SECONDARY_SCORE = 0.5
         self.RACKET_SCORE_MIN = 0.6
         self.BALL_SCORE_MIN = 0.6
         self.v_width = 0
@@ -26,20 +27,24 @@ class DetectionModel:
         self.counter = 0
         self.im_diff = ImageDiff()
         self.backSub = cv2.createBackgroundSubtractorKNN()
+        self.num_of_misses = 0
 
     def detect_player_1(self, image, court_detector):
         boxes = np.zeros_like(image)
 
         self.v_height, self.v_width = image.shape[:2]
         if len(self.player_1_boxes) == 0:
-            court_type = 1
-            white_ref = court_detector.court_reference.get_court_mask(court_type)
-            white_mask = cv2.warpPerspective(white_ref, court_detector.court_warp_matrix[-1], image.shape[1::-1])
-            # TODO find different way to add more space at the top
-            if court_type == 2:
-                white_mask = cv2.dilate(white_mask, np.ones((50, 1)), anchor=(0, 0))
-            image_court = image.copy()
-            image_court[white_mask == 0, :] = (0, 0, 0)
+            if court_detector is None:
+                image_court = image.copy()
+            else:
+                court_type = 1
+                white_ref = court_detector.court_reference.get_court_mask(court_type)
+                white_mask = cv2.warpPerspective(white_ref, court_detector.court_warp_matrix[-1], image.shape[1::-1])
+                # TODO find different way to add more space at the top
+                if court_type == 2:
+                    white_mask = cv2.dilate(white_mask, np.ones((50, 1)), anchor=(0, 0))
+                image_court = image.copy()
+                image_court[white_mask == 0, :] = (0, 0, 0)
             '''max_values = np.max(np.max(image_court, axis=1), axis=1)
             max_values_index = np.where(max_values > 0)[0]
             top_y = max_values_index[0]
@@ -59,17 +64,19 @@ class DetectionModel:
                 # biggest_box = sorted(persons_boxes, key=lambda x: area_of_box(x), reverse=True)[0]
                 biggest_box = max(persons_boxes, key=lambda x: area_of_box(x)).round()
                 self.player_1_boxes.append(biggest_box)
+            else:
+                return None
         else:
             xt, yt, xb, yb = self.player_1_boxes[-1]
             xt, yt, xb, yb = int(xt), int(yt), int(xb), int(yb)
-            margin = 100
+            margin = 250
             box_corners = (max(xt - margin, 0), max(yt - margin, 0), min(xb + margin, self.v_width), min(yb + margin, self.v_height))
             trimmed_image = image[max(yt - margin, 0): min(yb + margin, self.v_height), max(xt - margin, 0): min(xb + margin, self.v_width), :]
             '''cv2.imshow('res', trimmed_image)
             if cv2.waitKey(0) & 0xff == 27:
                 cv2.destroyAllWindows()'''
 
-            persons_boxes = self._detect(trimmed_image)
+            persons_boxes = self._detect(trimmed_image, self.PERSON_SECONDARY_SCORE)
             if len(persons_boxes) > 0:
                 c1 = center_of_box(self.player_1_boxes[-1])
                 closest_box = None
@@ -91,12 +98,15 @@ class DetectionModel:
                     self.player_1_boxes.append(self.player_1_boxes[-1])
             else:
                 self.player_1_boxes.append(self.player_1_boxes[-1])
+                self.num_of_misses += 1
         cv2.rectangle(boxes, (int(self.player_1_boxes[-1][0]), int(self.player_1_boxes[-1][1])),
                       (int(self.player_1_boxes[-1][2]), int(self.player_1_boxes[-1][3])), [255, 0, 255], 2)
 
         return boxes
 
-    def _detect(self, image):
+    def _detect(self, image, person_min_score=None):
+        if person_min_score is None:
+            person_min_score = self.PERSON_SCORE_MIN
         # creating torch.tensor from the image ndarray
         frame_t = image.transpose((2, 0, 1)) / 255
         frame_tensor = torch.from_numpy(frame_t).unsqueeze(0).type(self.dtype)
@@ -108,7 +118,7 @@ class DetectionModel:
 
         persons_boxes = []
         for box, label, score in zip(p[0]['boxes'][:], p[0]['labels'], p[0]['scores']):
-            if label == self.PERSON_LABEL and score > self.PERSON_SCORE_MIN:
+            if label == self.PERSON_LABEL and score > person_min_score:
                 '''cv2.rectangle(boxes, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), [255, 0, 255], 2)
                 cv2.putText(boxes, 'Person %.3f' % score, (int(box[0]) - 10, int(box[1] - 10)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)'''
