@@ -153,7 +153,7 @@ def video_process(video_path, show_video=False, include_video=True,
     court_detector = CourtDetector()
     detection_model = DetectionModel(dtype=dtype)
     pose_extractor = PoseExtractor(person_num=1, box=stickman_box, dtype=dtype) if stickman else None
-    shot_recognition = ActionRecognition('saved_state_strokes_3e-05')
+    shot_recognition = ActionRecognition('saved_state_strokes_3e-05_50%_labels')
 
     # Load videos from videos path
     video = cv2.VideoCapture(video_path)
@@ -254,6 +254,6 @@ def video_process(video_path, show_video=False, include_video=True,
 
 
 s = time.time()
-video_process(video_path='../videos/vid24.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
-              court=False, top_view=False)
+video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
+              court=True, top_view=True)
 print(f'Total computation time : {time.time() - s} seconds')

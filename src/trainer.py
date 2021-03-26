@@ -41,7 +41,7 @@ class Trainer:
 
         # Extras
         self.softmax = nn.Softmax(dim=1)
-        self.saved_state_name = f'saved_state_strokes_{lr}'
+        self.saved_state_name = f'saved_state_strokes_{lr}_{reg}'
         print(f'Learning rate = {lr}')
 
     def train(self, epochs=1):
@@ -199,21 +199,21 @@ def train_strokes():
     batch_size = 1
     root_dir = '../dataset/my_dataset/patches/'
     train_ds = StrokesDataset(csv_file='../dataset/my_dataset/patches/train_labels.csv', root_dir=root_dir,
-                              transform=None, train=True, use_features=True, y_full=2)
+                              transform=None, train=True, use_features=True, y_full=3)
     valid_ds = StrokesDataset(csv_file='../dataset/my_dataset/patches/valid_labels.csv', root_dir=root_dir,
-                              transform=None, train=True, use_features=True, y_full=2)
+                              transform=None, train=True, use_features=True, y_full=3)
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     valid_dl = DataLoader(valid_ds, batch_size=batch_size, shuffle=True)
     print(f'train set size is : {len(train_ds)}')
     print(f'validation set size is : {len(valid_ds)}')
-    for lr in [0.00003, 0.00004]:
+    for lr, reg in zip([0.0001],[0.003]):
         model = LSTM_model(3, dtype=dtype)
         model.type(dtype)
-        trainer = Trainer(model, train_dl, valid_dl, lr=lr)
-        trainer.train(23)
+        trainer = Trainer(model, train_dl, valid_dl, lr=lr, reg=reg)
+        trainer.train(22)
         print('Validation accuracy')
-        evaluate_performance(model, valid_dl)
-        get_confusion_matrix(trainer.saved_state_name, valid_dl)
+        '''evaluate_performance(model, valid_dl)
+        get_confusion_matrix(trainer.saved_state_name, valid_dl)'''
 
 
 def get_confusion_matrix(model_saved_state, dl=None):

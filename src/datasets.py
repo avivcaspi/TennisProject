@@ -125,11 +125,12 @@ class StrokesDataset(Dataset):
                 sample['gt'] = label
             elif self.y_full == 2:
                 labels_size = vid_features.shape[0] * 3 // 4
+                label = np.array([3] * (vid_features.shape[0] - labels_size) + [label] * labels_size)
+                sample['gt'] = label
+            elif self.y_full == 3:
+                labels_size = vid_features.shape[0] // 2
                 label = np.array([label] * labels_size)
                 sample['gt'] = label
-
-
-
 
         return sample
 

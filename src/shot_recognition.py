@@ -49,7 +49,7 @@ class LSTM_model(nn.Module):
         # x shape is (batch_size, seq_len, input_size)
         h0, c0 = self.init_state(x.size(0))
         output, (hn, cn) = self.LSTM(x, (h0, c0))
-        size = x.size(1) * 3 // 4
+        size = x.size(1) // 2
         output = output[:, -size:, :]
         scores = self.fc(output.squeeze(0))
         # scores shape is (batch_size, num_classes)
@@ -61,7 +61,7 @@ class LSTM_model(nn.Module):
 
 
 class ActionRecognition:
-    def __init__(self, model_saved_state, max_seq_len=60):
+    def __init__(self, model_saved_state, max_seq_len=55):
         self.dtype = get_dtype()
         self.feature_extractor = FeatureExtractor()
         self.feature_extractor.eval()
