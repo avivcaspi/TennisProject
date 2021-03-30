@@ -4,9 +4,9 @@ import argparse
 import imutils
 import cv2
 import torchvision
+import torch.nn as nn
 
 from src.court_detection import CourtDetector
-
 
 
 class BallDetector:
