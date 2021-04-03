@@ -14,7 +14,8 @@ from sklearn.model_selection import train_test_split
 class ThetisDataset(Dataset):
     """ THETIS dataset."""
 
-    def __init__(self, csv_file, root_dir, transform=None, train=True, use_features=True, three_classes=True, features_len=100):
+    def __init__(self, csv_file, root_dir, transform=None, train=True, use_features=True, three_classes=True,
+                 features_len=100):
         """
         Args:
             csv_file (DataFrame): Path to the csv file with annotations.
@@ -70,7 +71,7 @@ class ThetisDataset(Dataset):
                 vid_features = vid_features.iloc[:100, :]
                 # vid_frames = vid_frames[:100, :, :, :]'''
             sample['features'] = torch.Tensor(vid_features.values)
-            #sample['frames'] = vid_frames
+            # sample['frames'] = vid_frames
         return sample
 
 
@@ -135,6 +136,101 @@ class StrokesDataset(Dataset):
         return sample
 
 
+def getInputArr(path, path1, path2, width, height):
+    try:
+        # read the image
+        img = cv2.imread(path, 1)
+        # resize it
+        img = cv2.resize(img, (width, height))
+        # input must be float type
+        img = img.astype(np.float32)
+
+        # read the image
+        img1 = cv2.imread(path1, 1)
+        # resize it
+        img1 = cv2.resize(img1, (width, height))
+        # input must be float type
+        img1 = img1.astype(np.float32)
+
+        # read the image
+        img2 = cv2.imread(path2, 1)
+        # resize it
+        img2 = cv2.resize(img2, (width, height))
+        # input must be float type
+        img2 = img2.astype(np.float32)
+
+        # combine three imgs to  (width , height, rgb*3)
+        imgs = np.concatenate((img, img1, img2), axis=2)
+
+        # since the odering of TrackNet  is 'channels_first', so we need to change the axis
+        imgs = np.rollaxis(imgs, 2, 0)
+        return np.array(imgs)
+
+    except Exception as e:
+
+        print(path, e)
+
+
+def getOutputArr(path, nClasses, width, height):
+    seg_labels = np.zeros((height, width, nClasses))
+    try:
+        img = cv2.imread(path, 1)
+        img = cv2.resize(img, (width, height))
+        img = img[:, :, 0]
+
+        for c in range(nClasses):
+            seg_labels[:, :, c] = (img == c).astype(int)
+
+    except Exception as e:
+        print(e)
+
+    seg_labels = np.reshape(seg_labels, (width * height, nClasses))
+    seg_labels = seg_labels.transpose([1, 0]).argmax(0)
+    return np.array(seg_labels)
+
+
+class TrackNetDataset(Dataset):
+    """ TrackNet dataset."""
+
+    def __init__(self, csv_file, transform=None, train=True, input_height=360, input_width=640,
+                 output_height=360, output_width=640):
+        """
+        Args:
+            csv_file (DataFrame): Path to the csv file with annotations.
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.df = pd.read_csv(csv_file)
+        self.transform = transform
+        self.train = train
+        self.input_height = input_height
+        self.input_width = input_width
+        self.output_height = output_height
+        self.output_width = output_width
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        path1, path2, path3, gt_path, x, y = self.df.iloc[idx, :]
+        if np.math.isnan(x):
+            x = -1
+            y = -1
+        vid_frames = getInputArr(path1, path2, path3, self.input_width, self.input_height)
+
+        gt = getOutputArr(gt_path, 256, self.output_width, self.output_height)
+
+        vid_frames = torch.from_numpy(vid_frames) / 255
+        gt = torch.from_numpy(gt)
+
+        sample = {'frames': vid_frames, 'gt': gt, 'gt_path': gt_path, 'x_true': x, 'y_true': y}
+
+        return sample
+
+
 def video_to_frames(video_filename):
     """Extract frames from video"""
     cap = cv2.VideoCapture(video_filename)
@@ -168,23 +264,37 @@ def create_train_valid_test_datasets(csv_file, root_dir, transform=None):
     return train_ds, valid_ds, test_ds
 
 
-def get_dataloaders(csv_file, root_dir, transform, batch_size):
-    ds = StrokesDataset(csv_file=csv_file, root_dir=root_dir, transform=transform, train=True, use_features=True)
+def get_dataloaders(csv_file, root_dir, transform, batch_size, dataset_type='stroke', num_workers=0, seed=42):
+    if dataset_type == 'stroke':
+        ds = StrokesDataset(csv_file=csv_file, root_dir=root_dir, transform=transform, train=True, use_features=True)
+    elif dataset_type == 'tracknet':
+        ds = TrackNetDataset(csv_file=csv_file, train=True)
     length = len(ds)
     train_size = int(0.85 * length)
-    train_ds, valid_ds = torch.utils.data.random_split(ds, (train_size, length - train_size))
+    train_ds, valid_ds = torch.utils.data.random_split(ds, (train_size, length - train_size),
+                                                       generator=torch.Generator().manual_seed(seed))
     print(f'train set size is : {train_size}')
     print(f'validation set size is : {length - train_size}')
 
-    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    valid_dl = DataLoader(valid_ds, batch_size=batch_size, shuffle=True)
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    valid_dl = DataLoader(valid_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     return train_dl, valid_dl
 
 
 if __name__ == '__main__':
-    train,valid,test = create_train_valid_test_datasets('../dataset/THETIS/VIDEO_RGB/THETIS_data.csv', '../dataset/THETIS/VIDEO_RGB/')
+    train_dl, _ = get_dataloaders('../dataset/Dataset/training_model2.csv', root_dir=None, transform=None,
+                                  batch_size=1, dataset_type='tracknet', num_workers=4)
 
-    a = 0
+    import time
+
+    s = time.time()
+
+    for i, a in enumerate(train_dl):
+        print(a['gt_path'])
+        if i == 100:
+            break
+    print(time.time() - s)
+
     '''rootdir = '../dataset/THETIS/VIDEO_RGB/'
     data = []
     for subdir, dirs, files in os.walk(rootdir):

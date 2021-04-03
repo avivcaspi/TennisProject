@@ -5,56 +5,66 @@ import numpy as np
 import torch
 import torch.optim as optim
 import time
+
+from src.datasets import TrackNetDataset, get_dataloaders
 from src.load_batches import InputOutputGenerator
 from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt
 from torch.optim.adadelta import Adadelta
 
+from src.trainer import plot_graph
+
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, pad, bias=True):
+    def __init__(self, in_channels, out_channels, kernel_size, pad, bias=True, bn=True):
         super().__init__()
-        self.block = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size, padding=pad, bias=bias),
-            nn.ReLU(),
-            nn.BatchNorm2d(out_channels)
-        )
+        if bn:
+            self.block = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size, padding=pad, bias=bias),
+                nn.ReLU(),
+                nn.BatchNorm2d(out_channels)
+            )
+        else:
+            self.block = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size, padding=pad, bias=bias),
+                nn.ReLU()
+            )
 
     def forward(self, x):
         return self.block(x)
 
 
 class BallTrackerNet(nn.Module):
-    def __init__(self):
+    def __init__(self, bn=True):
         super().__init__()
-        layer_1 = ConvBlock(in_channels=9, out_channels=64, kernel_size=3, pad=1, bias=True)
-        layer_2 = ConvBlock(in_channels=64, out_channels=64, kernel_size=3, pad=1, bias=True)
+        layer_1 = ConvBlock(in_channels=9, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
+        layer_2 = ConvBlock(in_channels=64, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_3 = nn.MaxPool2d(kernel_size=2, stride=2)
-        layer_4 = ConvBlock(in_channels=64, out_channels=128, kernel_size=3, pad=1, bias=True)
-        layer_5 = ConvBlock(in_channels=128, out_channels=128, kernel_size=3, pad=1, bias=True)
+        layer_4 = ConvBlock(in_channels=64, out_channels=128, kernel_size=3, pad=1, bias=True, bn=bn)
+        layer_5 = ConvBlock(in_channels=128, out_channels=128, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_6 = nn.MaxPool2d(kernel_size=2, stride=2)
-        layer_7 = ConvBlock(in_channels=128, out_channels=256, kernel_size=3, pad=1, bias=True)
-        layer_8 = ConvBlock(in_channels=256, out_channels=256, kernel_size=3, pad=1, bias=True)
-        layer_9 = ConvBlock(in_channels=256, out_channels=256, kernel_size=3, pad=1, bias=True)
+        layer_7 = ConvBlock(in_channels=128, out_channels=256, kernel_size=3, pad=1, bias=True, bn=bn)
+        layer_8 = ConvBlock(in_channels=256, out_channels=256, kernel_size=3, pad=1, bias=True, bn=bn)
+        layer_9 = ConvBlock(in_channels=256, out_channels=256, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_10 = nn.MaxPool2d(kernel_size=2, stride=2)
-        layer_11 = ConvBlock(in_channels=256, out_channels=512, kernel_size=3, pad=1, bias=True)
-        layer_12 = ConvBlock(in_channels=512, out_channels=512, kernel_size=3, pad=1, bias=True)
-        layer_13 = ConvBlock(in_channels=512, out_channels=512, kernel_size=3, pad=1, bias=True)
+        layer_11 = ConvBlock(in_channels=256, out_channels=512, kernel_size=3, pad=1, bias=True, bn=bn)
+        layer_12 = ConvBlock(in_channels=512, out_channels=512, kernel_size=3, pad=1, bias=True, bn=bn)
+        layer_13 = ConvBlock(in_channels=512, out_channels=512, kernel_size=3, pad=1, bias=True, bn=bn)
 
         self.encoder = nn.Sequential(layer_1, layer_2, layer_3, layer_4, layer_5, layer_6, layer_7, layer_8, layer_9,
                                      layer_10, layer_11, layer_12, layer_13)
 
         layer_14 = nn.Upsample(scale_factor=2)
-        layer_15 = ConvBlock(in_channels=512, out_channels=256, kernel_size=3, pad=1, bias=True)
-        layer_16 = ConvBlock(in_channels=256, out_channels=256, kernel_size=3, pad=1, bias=True)
-        layer_17 = ConvBlock(in_channels=256, out_channels=256, kernel_size=3, pad=1, bias=True)
+        layer_15 = ConvBlock(in_channels=512, out_channels=256, kernel_size=3, pad=1, bias=True, bn=bn)
+        layer_16 = ConvBlock(in_channels=256, out_channels=256, kernel_size=3, pad=1, bias=True, bn=bn)
+        layer_17 = ConvBlock(in_channels=256, out_channels=256, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_18 = nn.Upsample(scale_factor=2)
-        layer_19 = ConvBlock(in_channels=256, out_channels=128, kernel_size=3, pad=1, bias=True)
-        layer_20 = ConvBlock(in_channels=128, out_channels=128, kernel_size=3, pad=1, bias=True)
+        layer_19 = ConvBlock(in_channels=256, out_channels=128, kernel_size=3, pad=1, bias=True, bn=bn)
+        layer_20 = ConvBlock(in_channels=128, out_channels=128, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_21 = nn.Upsample(scale_factor=2)
-        layer_22 = ConvBlock(in_channels=128, out_channels=64, kernel_size=3, pad=1, bias=True)
-        layer_23 = ConvBlock(in_channels=64, out_channels=64, kernel_size=3, pad=1, bias=True)
-        layer_24 = ConvBlock(in_channels=64, out_channels=256, kernel_size=3, pad=1, bias=True)
+        layer_22 = ConvBlock(in_channels=128, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
+        layer_23 = ConvBlock(in_channels=64, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
+        layer_24 = ConvBlock(in_channels=64, out_channels=256, kernel_size=3, pad=1, bias=True, bn=bn)
 
         self.decoder = nn.Sequential(layer_14, layer_15, layer_16, layer_17, layer_18, layer_19, layer_20, layer_21,
                                      layer_22, layer_23, layer_24)
@@ -83,14 +93,54 @@ class BallTrackerNet(nn.Module):
                 nn.init.constant_(module.weight, 1)
                 nn.init.constant_(module.bias, 0)
 
+    def inference(self, frames:torch.Tensor):
+        self.eval()
+        with torch.no_grad():
+            if len(frames.shape) == 3:
+                frames = frames.unsqueeze(0)
+            if next(self.parameters()).is_cuda:
+                frames.cuda()
+            output = self(frames)
+            output = output.argmax(dim=1).detach().cpu().numpy()
+            x, y = self.get_center_ball(output)
+        return x, y
+
+    def get_center_ball(self, output):
+        output = output.reshape((360, 640))
+
+        # cv2 image must be numpy.uint8, convert numpy.int64 to numpy.uint8
+        output = output.astype(np.uint8)
+
+        # reshape the image size as original input image
+        heatmap = cv2.resize(output, (640, 360))
+
+        # heatmap is converted into a binary image by threshold method.
+        ret, heatmap = cv2.threshold(heatmap, 127, 255, cv2.THRESH_BINARY)
+
+        # find the circle in image with 2<=radius<=7
+        circles = cv2.HoughCircles(heatmap, cv2.HOUGH_GRADIENT, dp=1, minDist=1, param1=50, param2=2, minRadius=2,
+                                   maxRadius=7)
+        # check if there have any tennis be detected
+        if circles is not None:
+            # if only one tennis be detected
+            if len(circles) == 1:
+                x = int(circles[0][0][0])
+                y = int(circles[0][0][1])
+
+                return x, y
+        return None, None
+
 
 def accuracy(y_pred, y_true):
     correct = (y_pred == y_true).sum()
     acc = correct / len(y_pred[0]) * 100
     non_zero = (y_true > 0).sum()
-    non_zero_correct = (y_pred[y_pred > 0] == y_true[y_pred > 0]).sum()
+    non_zero_correct = (y_pred[y_true > 0] == y_true[y_true > 0]).sum()
     if non_zero == 0:
-        non_zero_acc = 0.0
+        if non_zero_correct == 0:
+            non_zero_acc = 100.0
+        else:
+            non_zero_acc = 0.0
     else:
 
         non_zero_acc = non_zero_correct / non_zero * 100
@@ -112,56 +162,53 @@ def show_result(inputs, labels, outputs):
     plt.show()
 
 
-def get_center_ball_dist(output, gt):
-    gt = gt.reshape((360, 640))
-    output = output.reshape((360, 640))
+def get_center_ball_dist(output, x_true, y_true):
+    dists = []
+    for i in range(len(x_true)):
+        if x_true[i] == -1:
+            dists.append(-2)
+            continue
+        Rx = 640 / 1280
+        Ry = 360 / 720
+        x_true[i] *= Rx
+        y_true[i] *= Ry
+        cur_output = output[i].reshape((360, 640))
 
-    # cv2 image must be numpy.uint8, convert numpy.int64 to numpy.uint8
-    gt = gt.astype(np.uint8)
-    output = output.astype(np.uint8)
+        # cv2 image must be numpy.uint8, convert numpy.int64 to numpy.uint8
+        cur_output = cur_output.astype(np.uint8)
 
-    # reshape the image size as original input image
-    heatmap = cv2.resize(output, (640, 360))
+        # reshape the image size as original input image
+        heatmap = cv2.resize(cur_output, (640, 360))
 
-    # heatmap is converted into a binary image by threshold method.
-    ret, y_true_heatmap = cv2.threshold(gt, 127, 255, cv2.THRESH_BINARY)
-    ret, heatmap = cv2.threshold(heatmap, 127, 255, cv2.THRESH_BINARY)
+        # heatmap is converted into a binary image by threshold method.
+        ret, heatmap = cv2.threshold(heatmap, 127, 255, cv2.THRESH_BINARY)
 
-    # find the circle in image with 2<=radius<=7
-    y_true_circles = cv2.HoughCircles(y_true_heatmap, cv2.HOUGH_GRADIENT, dp=1, minDist=1, param1=50, param2=2,
-                                      minRadius=2, maxRadius=7)
-    circles = cv2.HoughCircles(heatmap, cv2.HOUGH_GRADIENT, dp=1, minDist=1, param1=50, param2=2, minRadius=2,
-                               maxRadius=7)
-    x_true = None
-    y_true = None
-    if y_true_circles is not None:
-        # if only one tennis be detected
-        if len(y_true_circles) == 1:
-            x_true = int(y_true_circles[0][0][0])
-            y_true = int(y_true_circles[0][0][1])
-            #print('true ', x_true, y_true)
-    # check if there have any tennis be detected
-    if circles is not None:
-        # if only one tennis be detected
-        if len(circles) == 1:
-            x = int(circles[0][0][0])
-            y = int(circles[0][0][1])
-            #print('pred ', x, y)
-            if x_true is not None and y_true is not None:
-                dist = int(np.linalg.norm((x_true - x, y_true - y)))
-            else:
-                dist = -2
-            return dist
-    return -1
+        # find the circle in image with 2<=radius<=7
+        circles = cv2.HoughCircles(heatmap, cv2.HOUGH_GRADIENT, dp=1, minDist=1, param1=50, param2=2, minRadius=2,
+                                   maxRadius=7)
+        # check if there have any tennis be detected
+        if circles is not None:
+            # if only one tennis be detected
+            if len(circles) == 1:
+                x = int(circles[0][0][0])
+                y = int(circles[0][0][1])
+                #print('pred ', x, y)
+                dist = np.linalg.norm((x_true[i] - x, y_true[i] - y))
+                dists.append(dist)
+                continue
+        dists.append(-1)
+    return dists
 
 
 def train(model_saved_state=None, epochs_num=100, lr=1.0):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = BallTrackerNet()
+    print(f'Using device {device}')
+    model = BallTrackerNet(bn=True)
     train_losses = []
     valid_losses = []
     train_acc = []
     valid_acc = []
+    total_epochs = 0
     if model_saved_state is not None:
         saved_state = torch.load(model_saved_state)
         model.load_state_dict(saved_state['model_state'])
@@ -169,27 +216,27 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
         valid_losses = saved_state['valid_loss']
         train_acc = saved_state['train_acc']
         valid_acc = saved_state['valid_acc']
+        total_epochs = saved_state['epochs']
         print('Loaded saved state')
     model.to(device)
+    batch_size = 2
+    train_dl, valid_dl = get_dataloaders('../dataset/Dataset/training_model2.csv', root_dir=None, transform=None,
+                                         batch_size=batch_size, dataset_type='tracknet', num_workers=4)
     criterion = nn.CrossEntropyLoss()
-    optimizer = Adadelta(model.parameters(), lr=1.0)
-    batch_size = 1
-    input_height, input_width = 360, 640
-    output_height, output_width = 360, 640
+    optimizer = Adadelta(model.parameters(), lr=lr)
 
     for epoch in range(epochs_num):
+        start_time = time.time()
         for phase in ['train', 'val']:
             if phase == 'train':
                 model.train(True)  # Set model to training mode
-                generator = InputOutputGenerator('../dataset/Dataset/training_model2.csv', batch_size, 256,
-                                                 input_height, input_width, output_height, output_width)
-                steps_per_epoch = 400
+                dl = train_dl
+                steps_per_epoch = 200
 
             else:
                 model.train(False)  # Set model to evaluate mode
-                generator = InputOutputGenerator('../dataset/Dataset/validation_model2.csv', batch_size, 256,
-                                                 input_height, input_width, output_height, output_width)
-                steps_per_epoch = 200
+                dl = valid_dl
+                steps_per_epoch = 100
             print(f'Starting Epoch {epoch + 1} Phase {phase}')
             running_loss = 0.0
             running_acc = 0.0
@@ -200,39 +247,50 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
             count = 1
             n1 = 0
             n2 = 0
-            for i, data in enumerate(generator, 0):
+            for i, data in enumerate(dl):
+                torch.cuda.empty_cache()
+
                 # get the inputs; data is a list of [inputs, labels]
-                inputs, labels = data
+                inputs, labels = data['frames'], data['gt']
                 inputs = inputs.to(device)
+
                 labels = labels.to(device)
+
+                x_true = data['x_true']
+                y_true = data['y_true']
+
                 # zero the parameter gradients
                 optimizer.zero_grad()
 
                 # forward + backward + optimize
                 outputs = model(inputs)
+
                 loss = criterion(outputs, labels)
+
                 if phase == 'train':
                     loss.backward()
                     optimizer.step()
 
                 # print statistics
-                running_loss += loss.item()
-                acc, non_zero_acc, non_zero = accuracy(outputs.argmax(dim=1).detach().cpu().numpy(), labels.cpu().numpy())
-                dist = get_center_ball_dist(outputs.argmax(dim=1).detach().cpu().numpy(), labels.cpu().numpy())
-                if dist in [-1, -2]:
-                    dist = np.inf
-                    if dist == -1:
-                        n1 += 1
-                    else:
-                        n2 += 1
-                else:
-                    running_dist += dist
-                    count += 1
+                running_loss += loss.item() * batch_size
 
-                min_dist = min(dist, min_dist)
-                running_acc += acc
-                running_no_zero_acc += non_zero_acc
-                running_no_zero += non_zero
+                acc, non_zero_acc, non_zero = accuracy(outputs.argmax(dim=1).detach().cpu().numpy(), labels.cpu().numpy())
+                dists = get_center_ball_dist(outputs.argmax(dim=1).detach().cpu().numpy(), x_true, y_true)
+                for j, dist in enumerate(dists.copy()):
+                    if dist in [-1, -2]:
+                        if dist == -1:
+                            n1 += 1
+                        else:
+                            n2 += 1
+                        dists[j] = np.inf
+                    else:
+                        running_dist += dist
+                        count += 1
+
+                min_dist = min(*dists, min_dist)
+                running_acc += acc * batch_size
+                running_no_zero_acc += non_zero_acc * batch_size
+                running_no_zero += non_zero * batch_size
 
                 if (i + 1) % 100 == 0:
                     print('Phase {} Epoch {} Step {} Loss: {:.4f} Acc: {:.4f}%  Non zero acc: {:.4f}%  '
@@ -250,27 +308,31 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
                         valid_losses.append(running_loss / (i + 1))
                         valid_acc.append(running_no_zero_acc / (i + 1))
                     break
-        if epoch % 5 == 4:
-            inputs, labels = data
+        total_epochs += 1
+        print('Last Epoch time : {:.4f} min'.format((time.time() - start_time) / 60))
+        if epoch % 10 == 9:
+            inputs, labels = data['frames'], data['gt']
             inputs = inputs.to(device)
             labels = labels.to(device)
             with torch.no_grad():
                 outputs = model(inputs)
                 show_result(inputs, labels, outputs)
 
-            PATH = f'saved states/tracknet_weights_{lr}.pth'
+            PATH = f'saved states/tracknet_weights_lr_{lr}_epochs_{total_epochs}.pth'
             saved_state = dict(model_state=model.state_dict(), train_loss=train_losses, train_acc=train_acc,
-                               valid_loss=valid_losses, valid_acc=valid_acc)
+                               valid_loss=valid_losses, valid_acc=valid_acc, epochs=total_epochs)
             torch.save(saved_state, PATH)
             print(f'*** Saved checkpoint ***')
-    PATH = f'saved states/tracknet_weights_{lr}.pth'
+    PATH = f'saved states/tracknet_weights_lr_{lr}_epochs_{total_epochs}.pth'
     saved_state = dict(model_state=model.state_dict(), train_loss=train_losses, train_acc=train_acc,
-                       valid_loss=valid_losses, valid_acc=valid_acc)
+                       valid_loss=valid_losses, valid_acc=valid_acc, epochs=total_epochs)
     torch.save(saved_state, PATH)
     print(f'*** Saved checkpoint ***')
     print('Finished Training')
+    plot_graph(train_losses, valid_losses, 'loss', f'../report/tracknet_losses_{total_epochs}_epochs.png')
+    plot_graph(train_acc, valid_acc, 'acc', f'../report/tracknet_acc_{total_epochs}_epochs.png')
 
-    # Test set
+    '''# Test set
     print('Start Testing')
     running_loss = 0.0
     running_acc = 0.0
@@ -315,15 +377,17 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
                                                                                               running_acc / (i + 1),
                                                                                               running_no_zero_acc / (
                                                                                                       i + 1),
-                                                                                              running_no_zero))
+                                                                                              running_no_zero))'''
 
 
 if __name__ == "__main__":
-
+    '''state = torch.load('saved states/tracknet_weights_lr_0.05_epochs_280.pth')
+    plot_graph(state['train_loss'], state['valid_loss'], 'loss', '../report/tracknet_losses_100_epochs.png')
+    plot_graph(state['train_acc'], state['valid_acc'], 'acc', '../report/tracknet_acc_100_epochs.png')'''
     start = time.time()
     for lr in [1.0]:
         s = time.time()
         print(f'Start training with LR = {lr}')
-        train(epochs_num=100, lr=lr)
+        train(epochs_num=90, lr=lr)
         print(f'End training with LR = {lr}, Time = {time.time() - s}')
     print(f'Finished all runs, Time = {time.time() - start}')

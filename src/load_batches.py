@@ -49,7 +49,6 @@ def getOutputArr(path, nClasses, width, height):
 		img = cv2.imread(path, 1)
 		img = cv2.resize(img, (width, height))
 		img = img[:, :, 0]
-		a = np.argmax(img, 1)
 
 		for c in range(nClasses):
 			seg_labels[:, :, c] = (img == c).astype(int)
