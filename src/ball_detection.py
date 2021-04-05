@@ -7,7 +7,7 @@ import torch
 import torchvision
 import torch.nn as nn
 from PIL import Image, ImageDraw
-
+import matplotlib.pyplot as plt
 from src.ball_tracker_net import BallTrackerNet
 from src.court_detection import CourtDetector
 from src.utils import get_video_properties
@@ -48,14 +48,12 @@ class BallDetector:
         self.last_frame = None
         self.before_last_frame = None
 
-        self.movement_threshold = 200
-
         self.video_width = None
         self.video_height = None
         self.model_input_width = 640
         self.model_input_height = 360
 
-        self.xy_coordinates = [(None, None), (None, None)]
+        self.xy_coordinates = np.array([[None, None], [None, None]])
 
     def detect_ball(self, frame):
         if self.video_width is None:
@@ -72,17 +70,49 @@ class BallDetector:
             if x is not None:
                 x = x * (self.video_width / self.model_input_width)
                 y = y * (self.video_height / self.model_input_height)
-            self.xy_coordinates.append((x, y))
+            self.xy_coordinates = np.append(self.xy_coordinates, np.array([[x, y]]), axis=0)
+
+    def mark_positions(self, frame, mark_num=4):
+        q = self.xy_coordinates[-mark_num:, :]
+        pil_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(pil_image)
+        for i in range(q.shape[0]):
+            if q[i, 0] is not None:
+                draw_x = q[i, 0]
+                draw_y = q[i, 1]
+                bbox = (draw_x - 2, draw_y - 2, draw_x + 2, draw_y + 2)
+                draw = ImageDraw.Draw(pil_image)
+                draw.ellipse(bbox, outline='yellow')
+
+            # Convert PIL image format back to opencv image format
+            frame = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+        return frame
+
+    def show_y_graph(self, max_value_indices=()):
+        y_values = self.xy_coordinates[:, 1]
+        plt.figure()
+        plt.plot(range(len(y_values)), y_values, 'bo-', markevery=max_value_indices)
+
+        plt.show()
+
+    def get_max_value_frames(self, window_len=60):
+        y_values = self.xy_coordinates[:, 1]
+        y_values[np.where(np.array(y_values) == None)[0]] = np.nan
+        max_indices = []
+        for i in range(0, len(y_values) - window_len, window_len/2):
+            window = y_values[i:i+window_len]
+            indices = np.nanargmax(window) + i
+            max_indices.append(indices)
+        max_indices = list(dict.fromkeys(max_indices))
+        return max_indices
 
 
 if __name__ == "__main__":
-
     ball_detector = BallDetector('saved states/tracknet_weights_lr_0.05_epochs_280.pth')
-    cap = cv2.VideoCapture('../videos/vid27.mp4')
+    cap = cv2.VideoCapture('../videos/vid7.mp4')
     # get videos properties
     fps, length, v_width, v_height = get_video_properties(cap)
-    output_video = cv2.VideoWriter('output/ball_detection.avi',
-                                   cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), fps, (v_width, v_height))
+
     frame_i = 0
     while True:
         ret, frame = cap.read()
@@ -91,25 +121,31 @@ if __name__ == "__main__":
             break
 
         ball_detector.detect_ball(frame)
-        q = ball_detector.xy_coordinates[-4:]
-        PIL_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        PIL_image = Image.fromarray(PIL_image)
-        for i in range(len(q)):
-            if q[i][0] is not None:
-                draw_x = q[i][0]
-                draw_y = q[i][1]
-                bbox = (draw_x - 2, draw_y - 2, draw_x + 2, draw_y + 2)
-                draw = ImageDraw.Draw(PIL_image)
-                draw.ellipse(bbox, outline='yellow')
 
-            # Convert PIL image format back to opencv image format
-            frame = cv2.cvtColor(np.array(PIL_image), cv2.COLOR_RGB2BGR)
-        # write image to output_video
-        output_video.write(frame)
-        cv2.imshow('df', frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+    max_value_indices = ball_detector.get_max_value_frames()
+    ball_detector.show_y_graph(max_value_indices)
+
+
 
     cap.release()
-    output_video.release()
+
+    cv2.destroyAllWindows()
+
+    for index in max_value_indices:
+        cap = cv2.VideoCapture('../videos/vid7.mp4')
+        # get videos properties
+        fps, length, v_width, v_height = get_video_properties(cap)
+        cap.set(1, index)
+        frame_i = 0
+        for i in range(30):
+            ret, frame = cap.read()
+            frame_i += 1
+            if not ret:
+                break
+
+            cv2.imshow('frame', frame)
+            if cv2.waitKey(50) & 0xFF == ord('q'):
+                cv2.destroyAllWindows()
+        cv2.waitKey(100)
+        cap.release()
     cv2.destroyAllWindows()

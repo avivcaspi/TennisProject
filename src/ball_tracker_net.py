@@ -6,6 +6,8 @@ import torch
 import torch.optim as optim
 import time
 
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
 from src.datasets import TrackNetDataset, get_dataloaders
 from src.load_batches import InputOutputGenerator
 from sklearn.metrics import accuracy_score
@@ -72,13 +74,13 @@ class BallTrackerNet(nn.Module):
         self.softmax = nn.Softmax(dim=1)
         self._init_weights()
 
-    def forward(self, x):
+    def forward(self, x, testing=False):
         batch_size = x.size(0)
         features = self.encoder(x)
         scores_map = self.decoder(features)
         output = scores_map.reshape(batch_size, 256, -1)
         # output = output.permute(0, 2, 1)
-        if not self.training:
+        if testing:
             output = self.softmax(output)
         return output
 
@@ -93,14 +95,14 @@ class BallTrackerNet(nn.Module):
                 nn.init.constant_(module.weight, 1)
                 nn.init.constant_(module.bias, 0)
 
-    def inference(self, frames:torch.Tensor):
+    def inference(self, frames: torch.Tensor):
         self.eval()
         with torch.no_grad():
             if len(frames.shape) == 3:
                 frames = frames.unsqueeze(0)
             if next(self.parameters()).is_cuda:
                 frames.cuda()
-            output = self(frames)
+            output = self(frames, True)
             output = output.argmax(dim=1).detach().cpu().numpy()
             x, y = self.get_center_ball(output)
         return x, y
@@ -133,7 +135,7 @@ class BallTrackerNet(nn.Module):
 
 def accuracy(y_pred, y_true):
     correct = (y_pred == y_true).sum()
-    acc = correct / len(y_pred[0]) * 100
+    acc = correct / (len(y_pred[0]) * y_pred.shape[0]) * 100
     non_zero = (y_true > 0).sum()
     non_zero_correct = (y_pred[y_true > 0] == y_true[y_true > 0]).sum()
     if non_zero == 0:
@@ -149,7 +151,7 @@ def accuracy(y_pred, y_true):
 
 def show_result(inputs, labels, outputs):
     outputs = outputs.argmax(dim=1).detach().cpu().numpy()
-    mask = outputs.reshape((360, 640))
+    mask = outputs[0].reshape((360, 640))
     fig, ax = plt.subplots(1, 2, figsize=(20, 1 * 5))
     ax[0].imshow(inputs[0, :3, :, ].detach().cpu().numpy().transpose((1, 2, 0)))
     ax[0].set_title('Image')
@@ -192,7 +194,7 @@ def get_center_ball_dist(output, x_true, y_true):
             if len(circles) == 1:
                 x = int(circles[0][0][0])
                 y = int(circles[0][0][1])
-                #print('pred ', x, y)
+                # print('pred ', x, y)
                 dist = np.linalg.norm((x_true[i] - x, y_true[i] - y))
                 dists.append(dist)
                 continue
@@ -224,6 +226,8 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
                                          batch_size=batch_size, dataset_type='tracknet', num_workers=4)
     criterion = nn.CrossEntropyLoss()
     optimizer = Adadelta(model.parameters(), lr=lr)
+    lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.8, patience=5, verbose=True,
+                                     min_lr=0.0001)
 
     for epoch in range(epochs_num):
         start_time = time.time()
@@ -249,7 +253,8 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
             n2 = 0
             for i, data in enumerate(dl):
                 torch.cuda.empty_cache()
-
+                '''print(f'AllocMem (Mb): '
+                      f'{torch.cuda.memory_allocated() / 1024 / 1024}')'''
                 # get the inputs; data is a list of [inputs, labels]
                 inputs, labels = data['frames'], data['gt']
                 inputs = inputs.to(device)
@@ -263,18 +268,22 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
                 optimizer.zero_grad()
 
                 # forward + backward + optimize
-                outputs = model(inputs)
-
-                loss = criterion(outputs, labels)
-
                 if phase == 'train':
+                    outputs = model(inputs)
+
+                    loss = criterion(outputs, labels)
                     loss.backward()
                     optimizer.step()
+                else:
+                    with torch.no_grad():
+                        outputs = model(inputs)
+                        loss = criterion(outputs, labels)
 
                 # print statistics
                 running_loss += loss.item() * batch_size
 
-                acc, non_zero_acc, non_zero = accuracy(outputs.argmax(dim=1).detach().cpu().numpy(), labels.cpu().numpy())
+                acc, non_zero_acc, non_zero = accuracy(outputs.argmax(dim=1).detach().cpu().numpy(),
+                                                       labels.cpu().numpy())
                 dists = get_center_ball_dist(outputs.argmax(dim=1).detach().cpu().numpy(), x_true, y_true)
                 for j, dist in enumerate(dists.copy()):
                     if dist in [-1, -2]:
@@ -288,13 +297,14 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
                         count += 1
 
                 min_dist = min(*dists, min_dist)
-                running_acc += acc * batch_size
+                running_acc += acc
                 running_no_zero_acc += non_zero_acc * batch_size
                 running_no_zero += non_zero * batch_size
 
                 if (i + 1) % 100 == 0:
                     print('Phase {} Epoch {} Step {} Loss: {:.4f} Acc: {:.4f}%  Non zero acc: {:.4f}%  '
-                          'Non zero: {}  Min Dist: {:.4f} Avg Dist {:.4f}'.format(phase, epoch + 1, i + 1, running_loss / (i + 1),
+                          'Non zero: {}  Min Dist: {:.4f} Avg Dist {:.4f}'.format(phase, epoch + 1, i + 1,
+                                                                                  running_loss / ((i + 1) * batch_size),
                                                                                   running_acc / (i + 1),
                                                                                   running_no_zero_acc / (i + 1),
                                                                                   running_no_zero,
@@ -307,10 +317,11 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
                     else:
                         valid_losses.append(running_loss / (i + 1))
                         valid_acc.append(running_no_zero_acc / (i + 1))
+                        lr_scheduler.step(valid_losses[-1])
                     break
         total_epochs += 1
         print('Last Epoch time : {:.4f} min'.format((time.time() - start_time) / 60))
-        if epoch % 10 == 9:
+        if epoch % 5 == 4:
             inputs, labels = data['frames'], data['gt']
             inputs = inputs.to(device)
             labels = labels.to(device)
@@ -381,13 +392,13 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
 
 
 if __name__ == "__main__":
-    '''state = torch.load('saved states/tracknet_weights_lr_0.05_epochs_280.pth')
-    plot_graph(state['train_loss'], state['valid_loss'], 'loss', '../report/tracknet_losses_100_epochs.png')
-    plot_graph(state['train_acc'], state['valid_acc'], 'acc', '../report/tracknet_acc_100_epochs.png')'''
+    '''state = torch.load('saved states/tracknet_weights_lr_1.0_epochs_115.pth')
+    plot_graph(state['train_loss'], state['valid_loss'], 'loss', '../report/tracknet_losses_115_epochs.png')
+    plot_graph(state['train_acc'], state['valid_acc'], 'acc', '../report/tracknet_acc_115_epochs.png')'''
     start = time.time()
     for lr in [1.0]:
         s = time.time()
         print(f'Start training with LR = {lr}')
-        train(epochs_num=90, lr=lr)
+        train(epochs_num=130, lr=lr)
         print(f'End training with LR = {lr}, Time = {time.time() - s}')
     print(f'Finished all runs, Time = {time.time() - start}')

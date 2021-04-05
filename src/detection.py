@@ -5,6 +5,9 @@ import torchvision
 import numpy as np
 import pandas as pd
 
+from src.court_detection import CourtDetector
+from src.utils import get_video_properties
+
 
 class DetectionModel:
     def __init__(self, dtype=torch.FloatTensor):
@@ -104,6 +107,42 @@ class DetectionModel:
 
         return boxes
 
+    def detect_top_persons(self, image, court_detector):
+        frame = image.copy()
+        if court_detector is None:
+            image_court = image.copy()
+        else:
+            court_type = 2
+            white_ref = court_detector.court_reference.get_court_mask(court_type)
+            white_mask = cv2.warpPerspective(white_ref, court_detector.court_warp_matrix[-1], image.shape[1::-1])
+            white_mask = cv2.dilate(white_mask, np.ones((50, 1)), anchor=(0, 0))
+            image_court = image.copy()
+            image_court[white_mask == 0, :] = (0, 0, 0)
+
+        # cv2.imwrite('../report/frame_only_court.png', image_court)
+        '''cv2.imshow('res', image_court)
+        if cv2.waitKey(0) & 0xff == 27:
+            cv2.destroyAllWindows()'''
+
+        persons_boxes = self._detect(image_court, self.PERSON_SECONDARY_SCORE)
+        if len(persons_boxes) > 0:
+            self.persons_boxes.append(persons_boxes)
+
+            for box in persons_boxes:
+                cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), [255, 0, 255], 2)
+
+        else:
+            self.persons_boxes.append(None)
+
+        return frame
+
+    def find_player_2_box(self):
+        boxes_centers = []
+        for boxes in self.persons_boxes:
+            centers = [center_of_box(box) for box in boxes]
+            boxes_centers.append(centers)
+        print(boxes_centers)
+
     def _detect(self, image, person_min_score=None):
         if person_min_score is None:
             person_min_score = self.PERSON_SCORE_MIN
@@ -186,6 +225,11 @@ def area_of_box(box):
     return height * width
 
 
+def boxes_diff(frame, box1, box2):
+    box1 = frame[box1[3]:box1[1], box1[2]:box1[0]].copy()
+    box2 = frame[box2[3]:box2[1], box2[2]:box2[0]].copy()
+    avg_color1 = np.mean(np.mean(box1, axis=0), axis=0)
+
 class ImageDiff:
     def __init__(self):
         self.last_image = None
@@ -202,13 +246,33 @@ class ImageDiff:
 
 
 if __name__ == "__main__":
+    court_detector = CourtDetector()
     video = cv2.VideoCapture('../videos/vid3.mp4')
+    # get videos properties
+    fps, length, v_width, v_height = get_video_properties(video)
+
+    # Output videos writer
+    out = cv2.VideoWriter(os.path.join('output', 'player2test.avi'),
+                          cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), fps, (v_width, v_height))
     model = DetectionModel()
+    frame_i = 0
     while True:
         ret, frame = video.read()
-
+        frame_i += 1
         if ret:
-            model.find_canadicate(frame)
+            if frame_i == 1:
+                court_detector.detect(frame)
+            court_detector.track_court(frame)
+
+            frame = model.detect_top_persons(frame, court_detector)
+            out.write(frame)
+            cv2.imshow('df',frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                cv2.destroyAllWindows()
 
         else:
             break
+    video.release()
+    out.release()
+    cv2.destroyAllWindows()
+    model.find_player_2_box()

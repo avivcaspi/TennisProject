@@ -8,6 +8,7 @@ from scipy import signal
 from detection import DetectionModel
 from pose import PoseExtractor
 from smooth import Smooth
+from src.ball_detection import BallDetector
 from src.shot_recognition import ActionRecognition
 from utils import get_video_properties, get_dtype, get_stickman_line_connection
 from court_detection import CourtDetector
@@ -154,6 +155,7 @@ def video_process(video_path, show_video=False, include_video=True,
     detection_model = DetectionModel(dtype=dtype)
     pose_extractor = PoseExtractor(person_num=1, box=stickman_box, dtype=dtype) if stickman else None
     shot_recognition = ActionRecognition('saved_state_strokes_3e-05_50%_labels')
+    ball_detector = BallDetector('saved states/tracknet_weights_lr_0.05_epochs_280.pth')
 
     # Load videos from videos path
     video = cv2.VideoCapture(video_path)
@@ -199,6 +201,8 @@ def video_process(video_path, show_video=False, include_video=True,
             if stickman:
                 stickman_marks = pose_extractor.extract_pose(frame, detection_model.player_1_boxes)
 
+            ball_detector.detect_ball(frame)
+
             probs, stroke = shot_recognition.predict_stroke(frame, detection_model.player_1_boxes[-1])
             # Combine all landmarks
             # TODO clean this shit
@@ -206,6 +210,7 @@ def video_process(video_path, show_video=False, include_video=True,
             mask = np.sum(total_marks, axis=2)
             frame[mask != 0, :] = [0, 0, 0]
             frame = frame + total_marks if include_video else total_marks
+            frame = ball_detector.mark_positions(frame,4)
             cv2.putText(frame, 'Forehand - {:.2f}, Backhand - {:.2f}, Service - {:.2f}'.format(*probs),
                         (100, 100),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
@@ -251,6 +256,8 @@ def video_process(video_path, show_video=False, include_video=True,
         # add smoothing data to the videos
         add_data_to_video(video_path, df_smooth, show_video, 2, output_folder,
                           smoothing_output_file, get_stickman_line_connection(), court_detector)
+
+    #ball_detector.show_y_graph()
 
 
 s = time.time()
