@@ -16,6 +16,54 @@ from torch.optim.adadelta import Adadelta
 
 from src.trainer import plot_graph
 
+import torch.nn.functional as F
+
+
+class WeightedFocalLoss(nn.Module):
+    "Non weighted version of Focal Loss"
+    def __init__(self, alpha=.25, gamma=2):
+        super(WeightedFocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+
+    def forward(self, inputs, targets):
+        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-ce_loss)
+        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
+        return focal_loss.mean()
+
+
+class FilteredJaccardLoss(nn.Module):
+
+    def forward(self, y_pred: torch.Tensor, y_true: torch.Tensor, ignore_index=255, epsilon=1e-8):
+        """
+        Calculate filtered Jaccard loss
+        :param y_pred: tensor shaped (batch_size x H x W) with probability for each pixel
+        :param y_true: tensor shaped (batch_size x H x W) of true class for each pixel
+        :param ignore_index: index of unlabeled pixels
+        :param epsilon: const for stability
+        :return:
+        """
+
+        if len(y_pred.shape) == 3:
+            softmax = nn.Softmax(dim=1)
+            y_pred = softmax(y_pred)
+            y_pred = y_pred[:, 1, :]
+
+        y_pred = y_pred[y_true != ignore_index]
+        y_true = y_true[y_true != ignore_index]
+
+        if y_true.sum() == 0:
+            i = ((1 - y_true) * (1 - y_pred)).sum().float()
+            u = ((1 - y_true) + (1 - y_pred)).sum().float()
+            loss = 1. - (i / (u - i + epsilon))
+        else:
+            i = (y_true * y_pred).sum().float()
+            u = (y_true + y_pred).sum().float()
+            loss = 1. - (i / (u - i + epsilon))
+
+        return loss
+
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, pad, bias=True, bn=True):
@@ -37,8 +85,9 @@ class ConvBlock(nn.Module):
 
 
 class BallTrackerNet(nn.Module):
-    def __init__(self, bn=True):
+    def __init__(self, out_channels=256, bn=True):
         super().__init__()
+        self.out_channels = out_channels
         layer_1 = ConvBlock(in_channels=9, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_2 = ConvBlock(in_channels=64, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_3 = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -66,7 +115,7 @@ class BallTrackerNet(nn.Module):
         layer_21 = nn.Upsample(scale_factor=2)
         layer_22 = ConvBlock(in_channels=128, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_23 = ConvBlock(in_channels=64, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
-        layer_24 = ConvBlock(in_channels=64, out_channels=256, kernel_size=3, pad=1, bias=True, bn=bn)
+        layer_24 = ConvBlock(in_channels=64, out_channels=self.out_channels, kernel_size=3, pad=1, bias=True, bn=bn)
 
         self.decoder = nn.Sequential(layer_14, layer_15, layer_16, layer_17, layer_18, layer_19, layer_20, layer_21,
                                      layer_22, layer_23, layer_24)
@@ -78,7 +127,7 @@ class BallTrackerNet(nn.Module):
         batch_size = x.size(0)
         features = self.encoder(x)
         scores_map = self.decoder(features)
-        output = scores_map.reshape(batch_size, 256, -1)
+        output = scores_map.reshape(batch_size, self.out_channels, -1)
         # output = output.permute(0, 2, 1)
         if testing:
             output = self.softmax(output)
@@ -104,6 +153,8 @@ class BallTrackerNet(nn.Module):
                 frames.cuda()
             output = self(frames, True)
             output = output.argmax(dim=1).detach().cpu().numpy()
+            if self.out_channels == 2:
+                output *= 255
             x, y = self.get_center_ball(output)
         return x, y
 
@@ -150,7 +201,10 @@ def accuracy(y_pred, y_true):
 
 
 def show_result(inputs, labels, outputs):
+    num_classes = outputs.size(1)
     outputs = outputs.argmax(dim=1).detach().cpu().numpy()
+    if num_classes == 2:
+        outputs *= 255
     mask = outputs[0].reshape((360, 640))
     fig, ax = plt.subplots(1, 2, figsize=(20, 1 * 5))
     ax[0].imshow(inputs[0, :3, :, ].detach().cpu().numpy().transpose((1, 2, 0)))
@@ -164,7 +218,7 @@ def show_result(inputs, labels, outputs):
     plt.show()
 
 
-def get_center_ball_dist(output, x_true, y_true):
+def get_center_ball_dist(output, x_true, y_true, num_classes=256):
     dists = []
     for i in range(len(x_true)):
         if x_true[i] == -1:
@@ -183,7 +237,10 @@ def get_center_ball_dist(output, x_true, y_true):
         heatmap = cv2.resize(cur_output, (640, 360))
 
         # heatmap is converted into a binary image by threshold method.
-        ret, heatmap = cv2.threshold(heatmap, 127, 255, cv2.THRESH_BINARY)
+        if num_classes == 256:
+            ret, heatmap = cv2.threshold(heatmap, 127, 255, cv2.THRESH_BINARY)
+        else:
+            heatmap *= 255
 
         # find the circle in image with 2<=radius<=7
         circles = cv2.HoughCircles(heatmap, cv2.HOUGH_GRADIENT, dp=1, minDist=1, param1=50, param2=2, minRadius=2,
@@ -202,10 +259,10 @@ def get_center_ball_dist(output, x_true, y_true):
     return dists
 
 
-def train(model_saved_state=None, epochs_num=100, lr=1.0):
+def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch_size=1):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f'Using device {device}')
-    model = BallTrackerNet(bn=True)
+    model = BallTrackerNet(out_channels=num_classes, bn=True)
     train_losses = []
     valid_losses = []
     train_acc = []
@@ -221,13 +278,12 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
         total_epochs = saved_state['epochs']
         print('Loaded saved state')
     model.to(device)
-    batch_size = 2
     train_dl, valid_dl = get_dataloaders('../dataset/Dataset/training_model2.csv', root_dir=None, transform=None,
-                                         batch_size=batch_size, dataset_type='tracknet', num_workers=4)
+                                         batch_size=batch_size, num_classes=num_classes, dataset_type='tracknet', num_workers=2)
     criterion = nn.CrossEntropyLoss()
     optimizer = Adadelta(model.parameters(), lr=lr)
-    lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.8, patience=5, verbose=True,
-                                     min_lr=0.0001)
+    lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True,
+                                     min_lr=0.000001)
 
     for epoch in range(epochs_num):
         start_time = time.time()
@@ -235,12 +291,12 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
             if phase == 'train':
                 model.train(True)  # Set model to training mode
                 dl = train_dl
-                steps_per_epoch = 200
+                steps_per_epoch = 400 / batch_size
 
             else:
                 model.train(False)  # Set model to evaluate mode
                 dl = valid_dl
-                steps_per_epoch = 100
+                steps_per_epoch = 200 / batch_size
             print(f'Starting Epoch {epoch + 1} Phase {phase}')
             running_loss = 0.0
             running_acc = 0.0
@@ -252,6 +308,7 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
             n1 = 0
             n2 = 0
             for i, data in enumerate(dl):
+
                 torch.cuda.empty_cache()
                 '''print(f'AllocMem (Mb): '
                       f'{torch.cuda.memory_allocated() / 1024 / 1024}')'''
@@ -268,41 +325,51 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
                 optimizer.zero_grad()
 
                 # forward + backward + optimize
-                if phase == 'train':
-                    outputs = model(inputs)
 
+                if phase == 'train':
+
+                    outputs = model(inputs)
                     loss = criterion(outputs, labels)
+
                     loss.backward()
+
                     optimizer.step()
+
                 else:
+
                     with torch.no_grad():
                         outputs = model(inputs)
                         loss = criterion(outputs, labels)
+
 
                 # print statistics
                 running_loss += loss.item() * batch_size
 
                 acc, non_zero_acc, non_zero = accuracy(outputs.argmax(dim=1).detach().cpu().numpy(),
                                                        labels.cpu().numpy())
-                dists = get_center_ball_dist(outputs.argmax(dim=1).detach().cpu().numpy(), x_true, y_true)
-                for j, dist in enumerate(dists.copy()):
-                    if dist in [-1, -2]:
-                        if dist == -1:
-                            n1 += 1
-                        else:
-                            n2 += 1
-                        dists[j] = np.inf
-                    else:
-                        running_dist += dist
-                        count += 1
 
-                min_dist = min(*dists, min_dist)
+                if i % 10 == 9:
+                    dists = get_center_ball_dist(outputs.argmax(dim=1).detach().cpu().numpy(), x_true, y_true,
+                                                 num_classes=num_classes)
+
+                    for j, dist in enumerate(dists.copy()):
+                        if dist in [-1, -2]:
+                            if dist == -1:
+                                n1 += 1
+                            else:
+                                n2 += 1
+                            dists[j] = np.inf
+                        else:
+                            running_dist += dist
+                            count += 1
+
+                    min_dist = min(*dists, min_dist)
                 running_acc += acc
                 running_no_zero_acc += non_zero_acc * batch_size
                 running_no_zero += non_zero * batch_size
 
                 if (i + 1) % 100 == 0:
-                    print('Phase {} Epoch {} Step {} Loss: {:.4f} Acc: {:.4f}%  Non zero acc: {:.4f}%  '
+                    print('Phase {} Epoch {} Step {} Loss: {:.8f} Acc: {:.4f}%  Non zero acc: {:.4f}%  '
                           'Non zero: {}  Min Dist: {:.4f} Avg Dist {:.4f}'.format(phase, epoch + 1, i + 1,
                                                                                   running_loss / ((i + 1) * batch_size),
                                                                                   running_acc / (i + 1),
@@ -319,6 +386,7 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
                         valid_acc.append(running_no_zero_acc / (i + 1))
                         lr_scheduler.step(valid_losses[-1])
                     break
+
         total_epochs += 1
         print('Last Epoch time : {:.4f} min'.format((time.time() - start_time) / 60))
         if epoch % 5 == 4:
@@ -392,13 +460,13 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0):
 
 
 if __name__ == "__main__":
-    '''state = torch.load('saved states/tracknet_weights_lr_1.0_epochs_115.pth')
+    '''state = torch.load('saved states/tracknet_weights_lr_1.0_epochs_125.pth')
     plot_graph(state['train_loss'], state['valid_loss'], 'loss', '../report/tracknet_losses_115_epochs.png')
     plot_graph(state['train_acc'], state['valid_acc'], 'acc', '../report/tracknet_acc_115_epochs.png')'''
     start = time.time()
     for lr in [1.0]:
         s = time.time()
         print(f'Start training with LR = {lr}')
-        train(epochs_num=130, lr=lr)
+        train('saved states/tracknet_weights_lr_1.0_epochs_100.pth', epochs_num=100, lr=lr, num_classes=2, batch_size=2)
         print(f'End training with LR = {lr}, Time = {time.time() - s}')
     print(f'Finished all runs, Time = {time.time() - start}')

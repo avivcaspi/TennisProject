@@ -37,9 +37,9 @@ def combine_three_frames(frame1, frame2, frame3, width, height):
 
 
 class BallDetector:
-    def __init__(self, save_state):
+    def __init__(self, save_state, out_channels=2):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.detector = BallTrackerNet()
+        self.detector = BallTrackerNet(out_channels=2)
         saved_state_dict = torch.load(save_state)
         self.detector.load_state_dict(saved_state_dict['model_state'])
         self.detector.eval().to(self.device)

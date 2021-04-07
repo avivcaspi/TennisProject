@@ -155,7 +155,7 @@ def video_process(video_path, show_video=False, include_video=True,
     detection_model = DetectionModel(dtype=dtype)
     pose_extractor = PoseExtractor(person_num=1, box=stickman_box, dtype=dtype) if stickman else None
     shot_recognition = ActionRecognition('saved_state_strokes_3e-05_50%_labels')
-    ball_detector = BallDetector('saved states/tracknet_weights_lr_0.05_epochs_280.pth')
+    ball_detector = BallDetector('saved states/tracknet_weights_lr_1.0_epochs_100.pth', out_channels=2)
 
     # Load videos from videos path
     video = cv2.VideoCapture(video_path)

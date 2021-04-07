@@ -171,20 +171,20 @@ def getInputArr(path, path1, path2, width, height):
         print(path, e)
 
 
-def getOutputArr(path, nClasses, width, height):
-    seg_labels = np.zeros((height, width, nClasses))
+def getOutputArr(path, num_classes, width, height):
+    seg_labels = np.zeros((height, width, num_classes))
     try:
         img = cv2.imread(path, 1)
         img = cv2.resize(img, (width, height))
         img = img[:, :, 0]
 
-        for c in range(nClasses):
+        for c in range(num_classes):
             seg_labels[:, :, c] = (img == c).astype(int)
 
     except Exception as e:
         print(e)
 
-    seg_labels = np.reshape(seg_labels, (width * height, nClasses))
+    seg_labels = np.reshape(seg_labels, (width * height, num_classes))
     seg_labels = seg_labels.transpose([1, 0]).argmax(0)
     return np.array(seg_labels)
 
@@ -193,7 +193,7 @@ class TrackNetDataset(Dataset):
     """ TrackNet dataset."""
 
     def __init__(self, csv_file, transform=None, train=True, input_height=360, input_width=640,
-                 output_height=360, output_width=640):
+                 output_height=360, output_width=640, num_classes=256):
         """
         Args:
             csv_file (DataFrame): Path to the csv file with annotations.
@@ -207,6 +207,7 @@ class TrackNetDataset(Dataset):
         self.input_width = input_width
         self.output_height = output_height
         self.output_width = output_width
+        self.num_classes = num_classes
 
     def __len__(self):
         return len(self.df)
@@ -221,7 +222,8 @@ class TrackNetDataset(Dataset):
             y = -1
         vid_frames = getInputArr(path1, path2, path3, self.input_width, self.input_height)
 
-        gt = getOutputArr(gt_path, 256, self.output_width, self.output_height)
+        gt_path = gt_path.replace("groundtruth", f"groundtruth_{self.num_classes}")
+        gt = getOutputArr(gt_path, self.num_classes, self.output_width, self.output_height)
 
         vid_frames = torch.from_numpy(vid_frames) / 255
         gt = torch.from_numpy(gt)
@@ -264,11 +266,11 @@ def create_train_valid_test_datasets(csv_file, root_dir, transform=None):
     return train_ds, valid_ds, test_ds
 
 
-def get_dataloaders(csv_file, root_dir, transform, batch_size, dataset_type='stroke', num_workers=0, seed=42):
+def get_dataloaders(csv_file, root_dir, transform, batch_size, dataset_type='stroke', num_classes=256, num_workers=0, seed=42):
     if dataset_type == 'stroke':
         ds = StrokesDataset(csv_file=csv_file, root_dir=root_dir, transform=transform, train=True, use_features=True)
     elif dataset_type == 'tracknet':
-        ds = TrackNetDataset(csv_file=csv_file, train=True)
+        ds = TrackNetDataset(csv_file=csv_file, train=True, num_classes=num_classes)
     length = len(ds)
     train_size = int(0.85 * length)
     train_ds, valid_ds = torch.utils.data.random_split(ds, (train_size, length - train_size),
