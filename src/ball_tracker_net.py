@@ -21,6 +21,7 @@ import torch.nn.functional as F
 
 class WeightedFocalLoss(nn.Module):
     "Non weighted version of Focal Loss"
+
     def __init__(self, alpha=.25, gamma=2):
         super(WeightedFocalLoss, self).__init__()
         self.alpha = alpha
@@ -219,15 +220,14 @@ def show_result(inputs, labels, outputs):
 
 
 def get_center_ball_dist(output, x_true, y_true, num_classes=256):
+    max_dist = 5
+    success, fail = 0, 0
     dists = []
+    Rx = 640 / 1280
+    Ry = 360 / 720
+
     for i in range(len(x_true)):
-        if x_true[i] == -1:
-            dists.append(-2)
-            continue
-        Rx = 640 / 1280
-        Ry = 360 / 720
-        x_true[i] *= Rx
-        y_true[i] *= Ry
+        x, y = -1, -1
         cur_output = output[i].reshape((360, 640))
 
         # cv2 image must be numpy.uint8, convert numpy.int64 to numpy.uint8
@@ -249,14 +249,29 @@ def get_center_ball_dist(output, x_true, y_true, num_classes=256):
         if circles is not None:
             # if only one tennis be detected
             if len(circles) == 1:
+
                 x = int(circles[0][0][0])
                 y = int(circles[0][0][1])
-                # print('pred ', x, y)
-                dist = np.linalg.norm((x_true[i] - x, y_true[i] - y))
+
+        if x_true[i] < 0:
+            if x < 0:
+                success += 1
+            else:
+                fail += 1
+            dists.append(-2)
+        else:
+            if x < 0:
+                fail += 1
+                dists.append(-1)
+            else:
+                dist = np.linalg.norm(((x_true[i] * Rx) - x, (y_true[i] * Ry) - y))
                 dists.append(dist)
-                continue
-        dists.append(-1)
-    return dists
+                if dist < max_dist:
+                    success += 1
+                else:
+                    fail += 1
+
+    return dists, success, fail
 
 
 def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch_size=1):
@@ -267,6 +282,10 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
     valid_losses = []
     train_acc = []
     valid_acc = []
+    train_success_epochs = []
+    train_fail_epochs = []
+    valid_success_epochs = []
+    valid_fail_epochs = []
     total_epochs = 0
     if model_saved_state is not None:
         saved_state = torch.load(model_saved_state)
@@ -276,13 +295,18 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
         train_acc = saved_state['train_acc']
         valid_acc = saved_state['valid_acc']
         total_epochs = saved_state['epochs']
+        train_success_epochs = saved_state['train_success']
+        train_fail_epochs = saved_state['train_fail']
+        valid_success_epochs = saved_state['valid_success']
+        valid_fail_epochs = saved_state['valid_fail']
         print('Loaded saved state')
     model.to(device)
     train_dl, valid_dl = get_dataloaders('../dataset/Dataset/training_model2.csv', root_dir=None, transform=None,
-                                         batch_size=batch_size, num_classes=num_classes, dataset_type='tracknet', num_workers=2)
+                                         batch_size=batch_size, num_classes=num_classes, dataset_type='tracknet',
+                                         num_workers=2)
     criterion = nn.CrossEntropyLoss()
     optimizer = Adadelta(model.parameters(), lr=lr)
-    lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True,
+    lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=8, verbose=True,
                                      min_lr=0.000001)
 
     for epoch in range(epochs_num):
@@ -307,6 +331,8 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
             count = 1
             n1 = 0
             n2 = 0
+            total_success = 0
+            total_fail = 0
             for i, data in enumerate(dl):
 
                 torch.cuda.empty_cache()
@@ -341,17 +367,18 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
                         outputs = model(inputs)
                         loss = criterion(outputs, labels)
 
-
                 # print statistics
                 running_loss += loss.item() * batch_size
 
                 acc, non_zero_acc, non_zero = accuracy(outputs.argmax(dim=1).detach().cpu().numpy(),
                                                        labels.cpu().numpy())
 
-                if i % 10 == 9:
-                    dists = get_center_ball_dist(outputs.argmax(dim=1).detach().cpu().numpy(), x_true, y_true,
-                                                 num_classes=num_classes)
-
+                if i % 1 == 0:
+                    dists, success, fail = get_center_ball_dist(outputs.argmax(dim=1).detach().cpu().numpy(), x_true,
+                                                                y_true,
+                                                                num_classes=num_classes)
+                    total_success += success
+                    total_fail += fail
                     for j, dist in enumerate(dists.copy()):
                         if dist in [-1, -2]:
                             if dist == -1:
@@ -365,31 +392,37 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
 
                     min_dist = min(*dists, min_dist)
                 running_acc += acc
-                running_no_zero_acc += non_zero_acc * batch_size
-                running_no_zero += non_zero * batch_size
+                running_no_zero_acc += non_zero_acc
+                running_no_zero += non_zero
 
                 if (i + 1) % 100 == 0:
                     print('Phase {} Epoch {} Step {} Loss: {:.8f} Acc: {:.4f}%  Non zero acc: {:.4f}%  '
-                          'Non zero: {}  Min Dist: {:.4f} Avg Dist {:.4f}'.format(phase, epoch + 1, i + 1,
-                                                                                  running_loss / ((i + 1) * batch_size),
-                                                                                  running_acc / (i + 1),
-                                                                                  running_no_zero_acc / (i + 1),
-                                                                                  running_no_zero,
-                                                                                  min_dist, running_dist / count))
+                          'Success acc: {:.2f}% Min Dist: {:.4f} Avg Dist {:.4f}'.format(phase, epoch + 1, i + 1,
+                                                                                        running_loss / ((
+                                                                                                                    i + 1) * batch_size),
+                                                                                        running_acc / (i + 1),
+                                                                                        running_no_zero_acc / (i + 1),
+                                                                                        total_success * 100 / (
+                                                                                                    total_success + total_fail),
+                                                                                        min_dist, running_dist / count))
                     print(f'n1 = {n1}  n2 = {n2}')
                 if (i + 1) == steps_per_epoch:
                     if phase == 'train':
                         train_losses.append(running_loss / (i + 1))
                         train_acc.append(running_no_zero_acc / (i + 1))
+                        train_success_epochs.append(total_success)
+                        train_fail_epochs.append(total_fail)
                     else:
                         valid_losses.append(running_loss / (i + 1))
                         valid_acc.append(running_no_zero_acc / (i + 1))
+                        valid_success_epochs.append(total_success)
+                        valid_fail_epochs.append(total_fail)
                         lr_scheduler.step(valid_losses[-1])
                     break
 
         total_epochs += 1
         print('Last Epoch time : {:.4f} min'.format((time.time() - start_time) / 60))
-        if epoch % 5 == 4:
+        if epoch % 15 == 14:
             inputs, labels = data['frames'], data['gt']
             inputs = inputs.to(device)
             labels = labels.to(device)
@@ -399,74 +432,35 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
 
             PATH = f'saved states/tracknet_weights_lr_{lr}_epochs_{total_epochs}.pth'
             saved_state = dict(model_state=model.state_dict(), train_loss=train_losses, train_acc=train_acc,
-                               valid_loss=valid_losses, valid_acc=valid_acc, epochs=total_epochs)
+                               valid_loss=valid_losses, valid_acc=valid_acc, epochs=total_epochs,
+                               train_success=train_success_epochs, train_fail=train_fail_epochs,
+                               valid_success=valid_success_epochs, valid_fail=valid_fail_epochs)
             torch.save(saved_state, PATH)
             print(f'*** Saved checkpoint ***')
     PATH = f'saved states/tracknet_weights_lr_{lr}_epochs_{total_epochs}.pth'
     saved_state = dict(model_state=model.state_dict(), train_loss=train_losses, train_acc=train_acc,
-                       valid_loss=valid_losses, valid_acc=valid_acc, epochs=total_epochs)
+                       valid_loss=valid_losses, valid_acc=valid_acc, epochs=total_epochs,
+                       train_success=train_success_epochs, train_fail=train_fail_epochs,
+                       valid_success=valid_success_epochs, valid_fail=valid_fail_epochs)
     torch.save(saved_state, PATH)
     print(f'*** Saved checkpoint ***')
     print('Finished Training')
     plot_graph(train_losses, valid_losses, 'loss', f'../report/tracknet_losses_{total_epochs}_epochs.png')
     plot_graph(train_acc, valid_acc, 'acc', f'../report/tracknet_acc_{total_epochs}_epochs.png')
 
-    '''# Test set
-    print('Start Testing')
-    running_loss = 0.0
-    running_acc = 0.0
-    running_no_zero_acc = 0.0
-    running_no_zero = 0
-    i = 0
-    for i, data in enumerate(InputOutputGenerator('../dataset/Dataset/testing_model2.csv', batch_size, 256,
-                                                  input_height, input_width, output_height, output_width), 0):
-        # get the inputs; data is a list of [inputs, labels]
-        inputs, labels = data
-        inputs = inputs.to(device)
-        labels = labels.to(device)
-        # zero the parameter gradients
-        model.train(False)
-        with torch.no_grad():
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            acc, non_zero_acc, non_zero = accuracy(outputs.argmax(dim=1).detach().cpu().numpy(), labels.cpu().numpy())
-            dist = get_center_ball_dist(outputs.argmax(dim=1).detach().cpu().numpy(), labels.cpu().numpy())
-            running_acc += acc
-            running_no_zero_acc += non_zero_acc
-            running_no_zero += non_zero
-            # print statistics
-            running_loss += loss.item()
-            if dist is None:
-                dist = np.inf
-        if not (i + 1) % 200:
-            print(
-                'Test results Step {} Loss: {:.4f} Acc: {:.4f}%  Non zero acc: {:.4f}% Non zero: {} Dist: {:.4f}'.format(
-                    i,
-                    running_loss / (
-                            i + 1),
-                    running_acc / (
-                            i + 1),
-                    running_no_zero_acc / (
-                            i + 1),
-                    running_no_zero, dist))
-        if i % 1000 == 999:
-            break
-
-    print('Test results Loss: {:.4f} Acc: {:.4f}%  Non zero acc: {:.4f}% Non zero: {}'.format(running_loss / (i + 1),
-                                                                                              running_acc / (i + 1),
-                                                                                              running_no_zero_acc / (
-                                                                                                      i + 1),
-                                                                                              running_no_zero))'''
-
 
 if __name__ == "__main__":
-    '''state = torch.load('saved states/tracknet_weights_lr_1.0_epochs_125.pth')
-    plot_graph(state['train_loss'], state['valid_loss'], 'loss', '../report/tracknet_losses_115_epochs.png')
-    plot_graph(state['train_acc'], state['valid_acc'], 'acc', '../report/tracknet_acc_115_epochs.png')'''
+    '''state = torch.load('saved states/tracknet_weights_lr_1.0_epochs_432.pth')
+    plot_graph(state['train_loss'], state['valid_loss'], 'loss', '../report/tracknet_losses_432_epochs.png')
+    plot_graph(state['train_acc'], state['valid_acc'], 'acc', '../report/tracknet_acc_432_epochs.png')
+    plot_graph(np.array(state['train_success']) / 100,
+               np.array(state['valid_success']) / 50, 'success acc', '../report/tracknet_success_acc_432_epochs.png')'''
+
     start = time.time()
     for lr in [1.0]:
         s = time.time()
         print(f'Start training with LR = {lr}')
-        train('saved states/tracknet_weights_lr_1.0_epochs_100.pth', epochs_num=100, lr=lr, num_classes=2, batch_size=2)
+        train(epochs_num=200, lr=lr, num_classes=2,
+              batch_size=2)
         print(f'End training with LR = {lr}, Time = {time.time() - s}')
     print(f'Finished all runs, Time = {time.time() - start}')

@@ -88,10 +88,10 @@ class BallDetector:
             frame = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
         return frame
 
-    def show_y_graph(self, max_value_indices=()):
+    def show_y_graph(self):
         y_values = self.xy_coordinates[:, 1]
         plt.figure()
-        plt.plot(range(len(y_values)), y_values, 'bo-', markevery=max_value_indices)
+        plt.plot(range(len(y_values)), y_values)
 
         plt.show()
 

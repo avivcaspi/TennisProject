@@ -257,7 +257,7 @@ def video_process(video_path, show_video=False, include_video=True,
         add_data_to_video(video_path, df_smooth, show_video, 2, output_folder,
                           smoothing_output_file, get_stickman_line_connection(), court_detector)
 
-    #ball_detector.show_y_graph()
+    ball_detector.show_y_graph()
 
 
 s = time.time()
