@@ -261,6 +261,20 @@ class CourtDetector:
                                    [self.left_court_line, self.right_court_line,
                                     self.right_inner_line, self.left_inner_line, self.middle_line])
 
+    def get_extra_parts_location(self):
+        parts = np.array(self.court_reference.get_extra_parts(), dtype=np.float32).reshape((-1, 1, 2))
+        parts = cv2.perspectiveTransform(parts, self.court_warp_matrix[-1]).reshape(-1)
+        top_part = parts[:2]
+        bottom_part = parts[2:]
+        return top_part, bottom_part
+
+    def delete_extra_parts(self, frame):
+        img = frame.copy()
+        top, bottom = self.get_extra_parts_location()
+        img[int(bottom[1] - 10):int(bottom[1] + 10), int(bottom[0] - 15):int(bottom[0] + 15), :] = (0, 0, 0)
+        img[int(top[1] - 10):int(top[1] + 10), int(top[0] - 15):int(top[0] + 15), :] = (0, 0, 0)
+        return img
+
     def check_court_movement(self, frame, threshold=0):
         if threshold == 0:
             threshold = self.court_score * 0.6
@@ -435,5 +449,13 @@ if __name__ == '__main__':
 
     s = time.time()
     court_detector = CourtDetector()
-    court_detector.detect(img, 1)
+    court_detector.detect(img, 0)
+    top, bottom = court_detector.get_extra_parts_location()
+    cv2.circle(img, tuple(top), 3, (0,255,0), 1)
+    cv2.circle(img, tuple(bottom), 3, (0,255,0), 1)
+    img[int(bottom[1]-10):int(bottom[1]+10), int(bottom[0] - 10):int(bottom[0]+10), :] = (0,0,0)
+    img[int(top[1]-10):int(top[1]+10), int(top[0] - 10):int(top[0]+10), :] = (0,0,0)
+    cv2.imshow('df', img)
+    if cv2.waitKey(0):
+        cv2.destroyAllWindows()
     print(f'time = {time.time() - s}')

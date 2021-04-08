@@ -15,6 +15,8 @@ class CourtReference:
         self.middle_line = ((832, 1110), (832, 2386))
         self.top_inner_line = ((423, 1110), (1242, 1110))
         self.bottom_inner_line = ((423, 2386), (1242, 2386))
+        self.top_extra_part = (832.5, 580)
+        self.bottom_extra_part = (832.5, 2910)
 
         self.court_conf = {1: [*self.baseline_top, *self.baseline_bottom],
                            2: [self.left_inner_line[0], self.right_inner_line[0], self.left_inner_line[1],
@@ -64,6 +66,10 @@ class CourtReference:
                  *self.left_inner_line, *self.right_inner_line, *self.middle_line,
                  *self.top_inner_line, *self.bottom_inner_line]
         return lines
+
+    def get_extra_parts(self):
+        parts = [self.top_extra_part, self.bottom_extra_part]
+        return parts
 
     def save_all_court_configurations(self):
         for i, conf in self.court_conf.items():

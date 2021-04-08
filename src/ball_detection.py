@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 import matplotlib.pyplot as plt
 from src.ball_tracker_net import BallTrackerNet
 from src.court_detection import CourtDetector
+from src.detection import center_of_box
 from src.utils import get_video_properties
 
 
@@ -39,7 +40,7 @@ def combine_three_frames(frame1, frame2, frame3, width, height):
 class BallDetector:
     def __init__(self, save_state, out_channels=2):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.detector = BallTrackerNet(out_channels=2)
+        self.detector = BallTrackerNet(out_channels=out_channels)
         saved_state_dict = torch.load(save_state)
         self.detector.load_state_dict(saved_state_dict['model_state'])
         self.detector.eval().to(self.device)
@@ -88,19 +89,43 @@ class BallDetector:
             frame = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
         return frame
 
-    def show_y_graph(self):
-        y_values = self.xy_coordinates[:, 1]
-        plt.figure()
-        plt.plot(range(len(y_values)), y_values)
+    def show_y_graph(self, box_positions):
+        boxes_centers = np.array([center_of_box(box) for box in box_positions])
+        player_1_y_values = boxes_centers[:, 1]
+        player_1_y_values -= np.array([(box[3] - box[1]) // 4 for box in box_positions])
+        y_values = self.xy_coordinates[:, 1].copy()
+        x_values = self.xy_coordinates[:, 0].copy()
 
+        outliers_y = self._get_outliers_indices(y_values)
+
+        outliers_x = self._get_outliers_indices(x_values)
+        outliers = outliers_x + outliers_y
+        print(f'Outliers : {outliers}')
+        y_values[outliers] = None
+        plt.figure()
+        plt.scatter(range(len(y_values)), y_values)
+        plt.plot(range(len(player_1_y_values)), player_1_y_values, color='r')
         plt.show()
+
+    def _get_outliers_indices(self, values, max_abs_diff=50):
+        values = values.copy()
+        values[values == None] = -1
+        diff = np.array([val1 - val2 for val1, val2 in zip(values[1:], values)])
+        outliers = []
+        for i, (val1, val2) in enumerate(zip(diff, diff[1:])):
+            if abs(val1) > max_abs_diff and abs(val2) > max_abs_diff:
+                outliers.append(i + 1)
+        none_indices = [i for i, y in enumerate(values) if y == -1]
+        outliers = [i for i in outliers if i not in none_indices]
+
+        return outliers
 
     def get_max_value_frames(self, window_len=60):
         y_values = self.xy_coordinates[:, 1]
         y_values[np.where(np.array(y_values) == None)[0]] = np.nan
         max_indices = []
-        for i in range(0, len(y_values) - window_len, window_len/2):
-            window = y_values[i:i+window_len]
+        for i in range(0, len(y_values) - window_len, window_len / 2):
+            window = y_values[i:i + window_len]
             indices = np.nanargmax(window) + i
             max_indices.append(indices)
         max_indices = list(dict.fromkeys(max_indices))
@@ -108,6 +133,23 @@ class BallDetector:
 
 
 if __name__ == "__main__":
+    a = np.array([0,1,2,3,4,5,6,7,8])
+    i = np.array([0,2,3,2,3])
+    a[i] = 10
+    diff = np.array([val1 - val2 for val1, val2 in zip(a[1:], a)])
+    max_abs_diff = 50
+    outliers = []
+    for i, (val1, val2) in enumerate(zip(diff, diff[1:])):
+        if abs(val1) > max_abs_diff and abs(val2) > max_abs_diff:
+            outliers.append(i + 1)
+
+    none_indices = [i for i, y in enumerate(a) if y == -1]
+    outliers = [i for i in outliers if i not in none_indices]
+    plt.figure()
+    plt.scatter(range(len(diff)), diff)
+    plt.scatter(outliers,diff[outliers], c='r')
+    plt.show()
+
     ball_detector = BallDetector('saved states/tracknet_weights_lr_0.05_epochs_280.pth')
     cap = cv2.VideoCapture('../videos/vid7.mp4')
     # get videos properties
@@ -123,29 +165,8 @@ if __name__ == "__main__":
         ball_detector.detect_ball(frame)
 
     max_value_indices = ball_detector.get_max_value_frames()
-    ball_detector.show_y_graph(max_value_indices)
-
-
+    ball_detector.show_y_graph()
 
     cap.release()
 
-    cv2.destroyAllWindows()
-
-    for index in max_value_indices:
-        cap = cv2.VideoCapture('../videos/vid7.mp4')
-        # get videos properties
-        fps, length, v_width, v_height = get_video_properties(cap)
-        cap.set(1, index)
-        frame_i = 0
-        for i in range(30):
-            ret, frame = cap.read()
-            frame_i += 1
-            if not ret:
-                break
-
-            cv2.imshow('frame', frame)
-            if cv2.waitKey(50) & 0xFF == ord('q'):
-                cv2.destroyAllWindows()
-        cv2.waitKey(100)
-        cap.release()
     cv2.destroyAllWindows()

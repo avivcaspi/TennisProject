@@ -450,17 +450,17 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
 
 
 if __name__ == "__main__":
-    '''state = torch.load('saved states/tracknet_weights_lr_1.0_epochs_432.pth')
-    plot_graph(state['train_loss'], state['valid_loss'], 'loss', '../report/tracknet_losses_432_epochs.png')
-    plot_graph(state['train_acc'], state['valid_acc'], 'acc', '../report/tracknet_acc_432_epochs.png')
-    plot_graph(np.array(state['train_success']) / 100,
-               np.array(state['valid_success']) / 50, 'success acc', '../report/tracknet_success_acc_432_epochs.png')'''
+    state = torch.load('saved states/tracknet_weights_lr_1.0_epochs_150.pth')
+    plot_graph(state['train_loss'][5:], state['valid_loss'][5:], 'loss', '../report/tracknet_losses_150_epochs.png')
+    plot_graph(state['train_acc'], state['valid_acc'], 'acc', '../report/tracknet_acc_150_epochs.png')
+    plot_graph(np.array(state['train_success']) * 100 / (np.array(state['train_success']) + np.array(state['train_fail'])),
+               np.array(state['valid_success']) * 100 / (np.array(state['valid_success']) + np.array(state['valid_fail'])), 'success acc', '../report/tracknet_success_acc_150_epochs.png')
 
     start = time.time()
     for lr in [1.0]:
         s = time.time()
         print(f'Start training with LR = {lr}')
-        train(epochs_num=200, lr=lr, num_classes=2,
+        train('saved states/tracknet_weights_lr_1.0_epochs_150.pth',epochs_num=200, lr=lr, num_classes=2,
               batch_size=2)
         print(f'End training with LR = {lr}, Time = {time.time() - s}')
     print(f'Finished all runs, Time = {time.time() - start}')

@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 from scipy import signal
 
-from detection import DetectionModel
+from detection import DetectionModel, center_of_box
 from pose import PoseExtractor
 from smooth import Smooth
 from src.ball_detection import BallDetector
@@ -155,7 +155,7 @@ def video_process(video_path, show_video=False, include_video=True,
     detection_model = DetectionModel(dtype=dtype)
     pose_extractor = PoseExtractor(person_num=1, box=stickman_box, dtype=dtype) if stickman else None
     shot_recognition = ActionRecognition('saved_state_strokes_3e-05_50%_labels')
-    ball_detector = BallDetector('saved states/tracknet_weights_lr_1.0_epochs_100.pth', out_channels=2)
+    ball_detector = BallDetector('saved states/tracknet_weights_lr_1.0_epochs_150_last_trained.pth', out_channels=2)
 
     # Load videos from videos path
     video = cv2.VideoCapture(video_path)
@@ -201,7 +201,7 @@ def video_process(video_path, show_video=False, include_video=True,
             if stickman:
                 stickman_marks = pose_extractor.extract_pose(frame, detection_model.player_1_boxes)
 
-            ball_detector.detect_ball(frame)
+            ball_detector.detect_ball(court_detector.delete_extra_parts(frame))
 
             probs, stroke = shot_recognition.predict_stroke(frame, detection_model.player_1_boxes[-1])
             # Combine all landmarks
@@ -210,13 +210,17 @@ def video_process(video_path, show_video=False, include_video=True,
             mask = np.sum(total_marks, axis=2)
             frame[mask != 0, :] = [0, 0, 0]
             frame = frame + total_marks if include_video else total_marks
-            frame = ball_detector.mark_positions(frame,4)
+            frame = ball_detector.mark_positions(frame, 4)
             cv2.putText(frame, 'Forehand - {:.2f}, Backhand - {:.2f}, Service - {:.2f}'.format(*probs),
                         (100, 100),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
             cv2.putText(frame, f'Stroke : {stroke}',
                         (detection_model.player_1_boxes[-1][0] - 10, detection_model.player_1_boxes[-1][1] - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
+
+            '''box_center = center_of_box(detection_model.player_1_boxes[-1])
+            player_1_y_value = box_center[1]
+            cv2.line(frame, (0,player_1_y_value), (1200, player_1_y_value), (255,0,0))'''
 
             if court:
                 frame = court_detector.add_court_overlay(frame, overlay_color=(0, 0, 255))
@@ -257,10 +261,10 @@ def video_process(video_path, show_video=False, include_video=True,
         add_data_to_video(video_path, df_smooth, show_video, 2, output_folder,
                           smoothing_output_file, get_stickman_line_connection(), court_detector)
 
-    ball_detector.show_y_graph()
+    ball_detector.show_y_graph(detection_model.player_1_boxes)
 
 
 s = time.time()
-video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
-              court=True, top_view=True)
+video_process(video_path='../videos/vid19.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
+              court=True, top_view=False)
 print(f'Total computation time : {time.time() - s} seconds')
