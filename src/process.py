@@ -265,6 +265,6 @@ def video_process(video_path, show_video=False, include_video=True,
 
 
 s = time.time()
-video_process(video_path='../videos/vid19.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
+video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
               court=True, top_view=False)
 print(f'Total computation time : {time.time() - s} seconds')
