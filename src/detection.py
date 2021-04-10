@@ -1,3 +1,4 @@
+import operator
 import os
 import cv2
 import torch
@@ -21,14 +22,16 @@ class DetectionModel:
         self.RACKET_LABEL = 43
         self.BALL_LABEL = 37
         self.PERSON_SCORE_MIN = 0.85
-        self.PERSON_SECONDARY_SCORE = 0.5
+        self.PERSON_SECONDARY_SCORE = 0.3
         self.RACKET_SCORE_MIN = 0.6
         self.BALL_SCORE_MIN = 0.6
         self.v_width = 0
         self.v_height = 0
         self.player_1_boxes = []
         self.player_2_boxes = []
-        self.persons_boxes = []
+        self.persons_boxes = {}
+        self.persons_dists = {}
+        self.persons_first_appearance = {}
         self.counter = 0
         self.im_diff = ImageDiff()
         self.backSub = cv2.createBackgroundSubtractorKNN()
@@ -117,7 +120,7 @@ class DetectionModel:
 
         return boxes
 
-    def detect_top_persons(self, image, court_detector):
+    def detect_top_persons(self, image, court_detector, frame_num):
         frame = image.copy()
 
         if court_detector is None:
@@ -137,43 +140,70 @@ class DetectionModel:
 
         persons_boxes, probs = self._detect(image_court, self.PERSON_SECONDARY_SCORE)
         if len(persons_boxes) > 0:
-            self.persons_boxes.append(persons_boxes)
+            pass
+            #self.persons_boxes.append(persons_boxes)
 
         else:
-            persons_boxes, probs = np.empty((0, 4)), [0]
-            self.persons_boxes.append([])
+            persons_boxes, probs = None, None
+            #self.persons_boxes.append([])
 
         tracked_objects = self.mot_tracker.update(persons_boxes, probs)
         for box in tracked_objects:
             cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), [255, 0, 255], 2)
             cv2.putText(frame, f'Player {int(box[4])}', (int(box[0]) - 10, int(box[1] - 10)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
-
+            if int(box[4]) in self.persons_boxes.keys():
+                self.persons_boxes[int(box[4])].append(box[:4])
+            else:
+                self.persons_boxes[int(box[4])] = []
+                self.persons_first_appearance[int(box[4])] = frame_num
         return frame
 
-    def find_player_2_box(self):
-        boxes_centers = []
-        for boxes in self.persons_boxes:
-            if boxes is not None:
-                centers = [center_of_box(box) for box in boxes]
-                boxes_centers.append(centers)
-            else:
-                boxes_centers.append([])
+    def calculate_all_persons_dists(self):
+        for id, person_boxes in self.persons_boxes.items():
+            dist = boxes_dist(person_boxes)
+            self.persons_dists[id] = dist
+        return self.persons_dists
 
-        boxes_centers = np.array(boxes_centers, dtype=object)
-        max_len = len(max(boxes_centers, key=lambda x: len(x)))
-        list1 = [[] for _ in range(max_len)]
-        for frame in boxes_centers:
-            for i, cen in enumerate(frame):
-                list1[i].append(cen)
-            for j in range(len(frame), max_len):
-                list1[j].append((None, None))
-        list1 = np.array(list1)
-        plt.figure()
-        for list in list1:
-            x_values = list[:, 0]
-            plt.scatter(range(len(list)), x_values, c='b')
-        plt.show()
+    def find_player_2_box(self):
+        dists = self.calculate_all_persons_dists()
+        threshold = 1
+        to_del = []
+        for key, val in dists.items():
+            length = len(self.persons_boxes[key])
+            if length > 0:
+                average_dist = val / length
+            else:
+                average_dist = 0
+            if average_dist < threshold:
+                to_del.append(key)
+        for key in to_del:
+            dists.pop(key)
+            self.persons_first_appearance.pop(key)
+        persons_sections = {key: [val, val + len(self.persons_boxes[key])] for key, val in
+                            self.persons_first_appearance.items()}
+        detections = []
+        while len(dists) > 0:
+            max_key = max(dists.items(), key=operator.itemgetter(1))[0]
+            max_sec = persons_sections[max_key].copy()
+            detections.append(max_key)
+            persons_sections.pop(max_key)
+            dists.pop(max_key)
+            for key, sec in persons_sections.items():
+                if sections_intersect(max_sec, sec):
+                    if key in dists.keys():
+                        dists.pop(key)
+        detections = sorted(detections)
+        print(detections)
+        boxes = []
+        for person in detections:
+            start = self.persons_first_appearance[person]
+            missing = start - 1 - len(boxes)
+            boxes.extend([[0, 0, 0, 0]] * missing)
+            boxes.extend(self.persons_boxes[person])
+        missing = len(self.player_1_boxes) - len(boxes)
+        boxes.extend([[0, 0, 0, 0]] * missing)
+        self.player_2_boxes = boxes
 
     def _detect(self, image, person_min_score=None):
         if person_min_score is None:
@@ -295,6 +325,22 @@ def boxes_diff(frame, box1, box2):
     avg_color1 = np.mean(np.mean(box1, axis=0), axis=0)
 
 
+def boxes_dist(boxes):
+    total_dist = 0
+    for box1, box2 in zip(boxes, boxes[1:]):
+        box1_center = np.array(center_of_box(box1))
+        box2_center = np.array(center_of_box(box2))
+        dist = np.linalg.norm(box2_center - box1_center)
+        total_dist += dist
+    return total_dist
+
+
+def sections_intersect(sec1, sec2):
+    if sec1[0] <= sec2[0] <= sec1[1] or sec2[0] <= sec1[0] <= sec2[1]:
+        return True
+    return False
+
+
 class ImageDiff:
     def __init__(self):
         self.last_image = None
@@ -328,7 +374,7 @@ if __name__ == "__main__":
 
 
     court_detector = CourtDetector()
-    video = cv2.VideoCapture('../videos/vid22.mp4')
+    video = cv2.VideoCapture('../videos/vid26.mp4')
     # get videos properties
     fps, length, v_width, v_height = get_video_properties(video)
 
@@ -346,7 +392,7 @@ if __name__ == "__main__":
                 court_detector.detect(frame)
             court_detector.track_court(frame)
 
-            frame = model.detect_top_persons(frame, court_detector)
+            frame = model.detect_top_persons(frame, court_detector, frame_i)
             out.write(frame)
             cv2.imshow('df', frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -357,4 +403,76 @@ if __name__ == "__main__":
     video.release()
     out.release()
     cv2.destroyAllWindows()
-    model.find_player_2_box()
+
+
+    dists = model.calculate_all_persons_dists()
+    threshold = 1
+    to_del = []
+    for key, val in dists.items():
+        length = len(model.persons_boxes[key])
+        if length > 0:
+            average_dist = val / length
+        else:
+            average_dist = 0
+        if average_dist < threshold:
+            to_del.append(key)
+    for key in to_del:
+        dists.pop(key)
+        model.persons_first_appearance.pop(key)
+    print(dists)
+    print(model.persons_first_appearance)
+    persons_sections = {key: [val, val + len(model.persons_boxes[key])] for key, val in model.persons_first_appearance.items()}
+    print(persons_sections)
+    detections = []
+    while len(dists) > 0:
+        max_key = max(dists.items(), key=operator.itemgetter(1))[0]
+        max_sec = persons_sections[max_key].copy()
+        detections.append(max_key)
+        persons_sections.pop(max_key)
+        dists.pop(max_key)
+        for key, sec in persons_sections.items():
+            if sections_intersect(max_sec, sec):
+                if key in dists.keys():
+                    dists.pop(key)
+    detections = sorted(detections)
+    print(detections)
+    boxes = []
+    for person in detections:
+        start = model.persons_first_appearance[person]
+        missing = start - 1 - len(boxes)
+        boxes.extend([None] * missing)
+        boxes.extend(model.persons_boxes[person])
+
+    video = cv2.VideoCapture('../videos/vid26.mp4')
+    # get videos properties
+    fps, length, v_width, v_height = get_video_properties(video)
+
+    # Output videos writer
+    out = cv2.VideoWriter(os.path.join('output', 'player2test.avi'),
+                          cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), fps, (v_width, v_height))
+
+
+    frame_i = 0
+    while True:
+        ret, frame = video.read()
+        frame_i += 1
+        if ret:
+
+            if frame_i <= len(boxes):
+                box = boxes[frame_i - 1]
+            else:
+                box = None
+            if box is not None:
+                cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), [255, 0, 255], 2)
+            out.write(frame)
+            cv2.imshow('df', frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                cv2.destroyAllWindows()
+
+        else:
+            break
+    video.release()
+    out.release()
+    cv2.destroyAllWindows()
+
+    #model.find_player_2_box()

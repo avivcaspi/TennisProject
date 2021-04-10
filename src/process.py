@@ -103,7 +103,7 @@ def add_data_to_video(input_video, df, show_video, with_frame, output_folder,
     cv2.destroyAllWindows()
 
 
-def create_top_view(court_detector, player_1_boxes):
+def create_top_view(court_detector, player_1_boxes, player_2_boxes):
     court = court_detector.court_reference.court.copy()
     court = cv2.line(court, *court_detector.court_reference.net, 255, 5)
     inv_mat = court_detector.game_warp_matrix
@@ -111,19 +111,29 @@ def create_top_view(court_detector, player_1_boxes):
     court = cv2.cvtColor(court, cv2.COLOR_GRAY2BGR)
     out = cv2.VideoWriter('output/top_view.avi',
                           cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), 30, (v_width, v_height))
-    positions = []
+    positions_1 = []
+    positions_2 = []
     for i, box in enumerate(player_1_boxes):
         feet_pos = np.array([(box[0] + (box[2] - box[0]) / 2).item(), box[3].item()]).reshape((1, 1, 2))
         feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mat[i]).reshape(-1)
-        positions.append(feet_court_pos)
-    positions = np.array(positions)
-    smoothed = np.zeros_like(positions)
-    smoothed[:, 0] = signal.savgol_filter(positions[:, 0], 7, 2)
-    smoothed[:, 1] = signal.savgol_filter(positions[:, 1], 7, 2)
+        positions_1.append(feet_court_pos)
+    for i, box in enumerate(player_2_boxes):
+        feet_pos = np.array([(box[0] + (box[2] - box[0]) / 2), box[3]]).reshape((1, 1, 2))
+        feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mat[i]).reshape(-1)
+        positions_2.append(feet_court_pos)
+    positions_1 = np.array(positions_1)
+    smoothed_1 = np.zeros_like(positions_1)
+    smoothed_1[:, 0] = signal.savgol_filter(positions_1[:, 0], 7, 2)
+    smoothed_1[:, 1] = signal.savgol_filter(positions_1[:, 1], 7, 2)
+    positions_2 = np.array(positions_2)
+    smoothed_2 = np.zeros_like(positions_2)
+    smoothed_2[:, 0] = signal.savgol_filter(positions_2[:, 0], 7, 2)
+    smoothed_2[:, 1] = signal.savgol_filter(positions_2[:, 1], 7, 2)
 
-    for feet_pos in smoothed:
+    for feet_pos_1, feet_pos_2 in zip(smoothed_1, smoothed_2):
         frame = court.copy()
-        frame = cv2.circle(frame, (int(feet_pos[0]), int(feet_pos[1])), 10, (0, 0, 255), 15)
+        frame = cv2.circle(frame, (int(feet_pos_1[0]), int(feet_pos_1[1])), 10, (0, 0, 255), 15)
+        frame = cv2.circle(frame, (int(feet_pos_2[0]), int(feet_pos_2[1])), 10, (0, 0, 255), 15)
         out.write(frame)
     out.release()
     cv2.destroyAllWindows()
@@ -196,6 +206,7 @@ def video_process(video_path, show_video=False, include_video=True,
 
             # detect
             boxes = detection_model.detect_player_1(frame.copy(), court_detector)
+            detection_model.detect_top_persons(frame, court_detector, frame_i)
 
             # Create stick man figure (pose detection)
             if stickman:
@@ -211,12 +222,12 @@ def video_process(video_path, show_video=False, include_video=True,
             frame[mask != 0, :] = [0, 0, 0]
             frame = frame + total_marks if include_video else total_marks
             frame = ball_detector.mark_positions(frame, 4)
-            cv2.putText(frame, 'Forehand - {:.2f}, Backhand - {:.2f}, Service - {:.2f}'.format(*probs),
+            '''cv2.putText(frame, 'Forehand - {:.2f}, Backhand - {:.2f}, Service - {:.2f}'.format(*probs),
                         (100, 100),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
             cv2.putText(frame, f'Stroke : {stroke}',
                         (detection_model.player_1_boxes[-1][0] - 10, detection_model.player_1_boxes[-1][1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)'''
 
             '''box_center = center_of_box(detection_model.player_1_boxes[-1])
             player_1_y_value = box_center[1]
@@ -242,8 +253,11 @@ def video_process(video_path, show_video=False, include_video=True,
     video.release()
     out.release()
     cv2.destroyAllWindows()
+
+    detection_model.find_player_2_box()
+
     if top_view:
-        create_top_view(court_detector, detection_model.player_1_boxes)
+        create_top_view(court_detector, detection_model.player_1_boxes, detection_model.player_2_boxes)
     # Save landmarks in csv files
     df = None
     # Save stickman data
@@ -266,5 +280,5 @@ def video_process(video_path, show_video=False, include_video=True,
 
 s = time.time()
 video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
-              court=True, top_view=False)
+              court=True, top_view=True)
 print(f'Total computation time : {time.time() - s} seconds')

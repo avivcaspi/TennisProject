@@ -216,9 +216,12 @@ class Sort(object):
     Returns the a similar array, where the last column is the object ID.
     NOTE: The number of objects returned may differ from the number of detections provided.
     """
-        for i, score in enumerate(scores):
-            dets[i] = np.append(dets[i], score)
-        dets = np.array(dets)
+        if dets is None:
+            dets = np.empty((0, 5))
+        else:
+            for i, score in enumerate(scores):
+                dets[i] = np.append(dets[i], score)
+            dets = np.array(dets)
         self.frame_count += 1
         # get predicted locations from existing trackers.
         trks = np.zeros((len(self.trackers), 5))
