@@ -211,12 +211,12 @@ def video_process(video_path, show_video=False, include_video=True,
             frame[mask != 0, :] = [0, 0, 0]
             frame = frame + total_marks if include_video else total_marks
             frame = ball_detector.mark_positions(frame, 4)
-            cv2.putText(frame, 'Forehand - {:.2f}, Backhand - {:.2f}, Service - {:.2f}'.format(*probs),
+            '''cv2.putText(frame, 'Forehand - {:.2f}, Backhand - {:.2f}, Service - {:.2f}'.format(*probs),
                         (100, 100),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
             cv2.putText(frame, f'Stroke : {stroke}',
                         (detection_model.player_1_boxes[-1][0] - 10, detection_model.player_1_boxes[-1][1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)'''
 
             '''box_center = center_of_box(detection_model.player_1_boxes[-1])
             player_1_y_value = box_center[1]
@@ -265,6 +265,6 @@ def video_process(video_path, show_video=False, include_video=True,
 
 
 s = time.time()
-video_process(video_path='../videos/vid19.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
+video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
               court=True, top_view=False)
 print(f'Total computation time : {time.time() - s} seconds')

@@ -54,6 +54,7 @@ class BallDetector:
         self.model_input_width = 640
         self.model_input_height = 360
 
+        self.threshold_dist = 100
         self.xy_coordinates = np.array([[None, None], [None, None]])
 
     def detect_ball(self, frame):
@@ -71,6 +72,9 @@ class BallDetector:
             if x is not None:
                 x = x * (self.video_width / self.model_input_width)
                 y = y * (self.video_height / self.model_input_height)
+                if self.xy_coordinates[-1][0] is not None:
+                    if np.linalg.norm(np.array([x,y]) - self.xy_coordinates[-1]) > self.threshold_dist:
+                        x, y = None, None
             self.xy_coordinates = np.append(self.xy_coordinates, np.array([[x, y]]), axis=0)
 
     def mark_positions(self, frame, mark_num=4):
@@ -96,12 +100,12 @@ class BallDetector:
         y_values = self.xy_coordinates[:, 1].copy()
         x_values = self.xy_coordinates[:, 0].copy()
 
-        outliers_y = self._get_outliers_indices(y_values)
+        '''outliers_y = self._get_outliers_indices(y_values)
 
         outliers_x = self._get_outliers_indices(x_values)
         outliers = outliers_x + outliers_y
         print(f'Outliers : {outliers}')
-        y_values[outliers] = None
+        y_values[outliers] = None'''
         plt.figure()
         plt.scatter(range(len(y_values)), y_values)
         plt.plot(range(len(player_1_y_values)), player_1_y_values, color='r')
