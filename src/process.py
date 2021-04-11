@@ -14,8 +14,40 @@ from utils import get_video_properties, get_dtype, get_stickman_line_connection
 from court_detection import CourtDetector
 
 
-def add_data_to_video(input_video, df, show_video, with_frame, output_folder,
-                      output_file, stickman_pairs, court_detector):
+def mark_player_box(frame, boxes, frame_num):
+    box = boxes[frame_num]
+    if box[0] is not None:
+        cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), [255, 0, 255], 2)
+    return frame
+
+
+def mark_skeleton(skeleton_df, img, img_no_frame, frame_number):
+    # landmarks colors
+    circle_color, line_color = (0, 0, 255), (255, 0, 0)
+    stickman_pairs = get_stickman_line_connection()
+
+    skeleton_df = skeleton_df.fillna(-1)
+    values = np.array(skeleton_df.values[frame_number], int)
+    points = list(zip(values[5:17], values[22:]))
+    # draw key points
+    for point in points:
+        if point[0] >= 0 and point[1] >= 0:
+            xy = tuple(np.array([point[0], point[1]], int))
+            cv2.circle(img, xy, 2, circle_color, 2)
+            cv2.circle(img_no_frame, xy, 2, circle_color, 2)
+
+    # Draw stickman
+    for pair in stickman_pairs:
+        partA = pair[0] - 5
+        partB = pair[1] - 5
+        if points[partA][0] >= 0 and points[partA][1] >= 0 and points[partB][0] >= 0 and points[partB][1] >= 0:
+            cv2.line(img, points[partA], points[partB], line_color, 1, lineType=cv2.LINE_AA)
+            cv2.line(img_no_frame, points[partA], points[partB], line_color, 1, lineType=cv2.LINE_AA)
+    return img, img_no_frame
+
+
+def add_data_to_video(input_video, court_detector, players_detector, ball_detector, shot_recognition, skeleton_df,
+                      show_video, with_frame, output_folder, output_file):
     """
     Creates new videos with pose stickman, face landmarks and blinks counter
     :param input_video: str, path to the input videos
@@ -26,11 +58,14 @@ def add_data_to_video(input_video, df, show_video, with_frame, output_folder,
     landmarks (side by side))
     :param output_folder: str, path to output folder
     :param output_file: str, name of the output file
-    :param stickman_pairs: list, pairs of indices to create stickman figure
     :return: None
     """
-    # landmarks colors
-    circle_color, line_color = (0, 0, 255), (255, 0, 0)
+
+    player1_boxes = players_detector.player_1_boxes
+    player2_boxes = players_detector.player_2_boxes
+
+    if skeleton_df is not None:
+        skeleton_df = skeleton_df.fillna(-1)
 
     # Read videos file
     cap = cv2.VideoCapture(input_video)
@@ -58,34 +93,31 @@ def add_data_to_video(input_video, df, show_video, with_frame, output_folder,
             break
 
         # initialize frame for landmarks only
-        img_no_frame = np.zeros_like(img)
+        img_no_frame = np.ones_like(img) * 255
+
+        # add Court location
+        img = court_detector.add_court_overlay(img, overlay_color=(0, 0, 255), frame_num=frame_number)
+        img_no_frame = court_detector.add_court_overlay(img_no_frame, overlay_color=(0, 0, 255), frame_num=frame_number)
+
+        # add players locations
+        img = mark_player_box(img, player1_boxes, frame_number)
+        img = mark_player_box(img, player2_boxes, frame_number)
+        img_no_frame = mark_player_box(img_no_frame, player1_boxes, frame_number)
+        img_no_frame = mark_player_box(img_no_frame, player2_boxes, frame_number)
+
+        # add ball location
+        img = ball_detector.mark_positions(img, frame_num=frame_number)
+        img_no_frame = ball_detector.mark_positions(img_no_frame, frame_num=frame_number, ball_color='black')
 
         # add pose stickman
-        if df is not None:
-            df = df.fillna(-1)
-            values = np.array(df.values[frame_number], int)
-            points = list(zip(values[5:17], values[22:]))
-            # draw key points
-            for point in points:
-                if point[0] >= 0 and point[1] >= 0:
-                    xy = tuple(np.array([point[0], point[1]], int))
-                    cv2.circle(img, xy, 2, circle_color, 2)
-                    cv2.circle(img_no_frame, xy, 2, circle_color, 2)
+        if skeleton_df is not None:
+            img, img_no_frame = mark_skeleton(skeleton_df, img, img_no_frame, frame_number)
 
-            # Draw stickman
-            for pair in stickman_pairs:
-                partA = pair[0] - 5
-                partB = pair[1] - 5
-                if points[partA][0] >= 0 and points[partA][1] >= 0 and points[partB][0] >= 0 and points[partB][1] >= 0:
-                    cv2.line(img, points[partA], points[partB], line_color, 1, lineType=cv2.LINE_AA)
-                    cv2.line(img_no_frame, points[partA], points[partB], line_color, 1, lineType=cv2.LINE_AA)
-
-        img_no_frame = court_detector.add_court_overlay(img_no_frame, frame_num=orig_frame)
         # display frame
         if show_video:
-            cv2.imshow('Output-Skeleton', img)
-        k = cv2.waitKey(1)
-        if k == 27: break
+            cv2.imshow('Output', img)
+            if cv2.waitKey(1) & 0xff == 27:
+                cv2.destroyAllWindows()
 
         # save output videos
         if with_frame == 0:
@@ -125,7 +157,7 @@ def create_top_view(court_detector, player_1_boxes, player_2_boxes):
         elif len(positions_2) > 0:
             positions_2.append(positions_2[-1])
         else:
-            positions_2.append(np.array([0,0]))
+            positions_2.append(np.array([0, 0]))
 
     positions_1 = np.array(positions_1)
     smoothed_1 = np.zeros_like(positions_1)
@@ -179,10 +211,6 @@ def video_process(video_path, show_video=False, include_video=True,
     # get videos properties
     fps, length, v_width, v_height = get_video_properties(video)
 
-    # Output videos writer
-    out = cv2.VideoWriter(os.path.join(output_folder, output_file + '.avi'),
-                          cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), fps, (v_width, v_height))
-
     # frame counter
     frame_i = 0
 
@@ -204,66 +232,34 @@ def video_process(video_path, show_video=False, include_video=True,
 
             court_detector.track_court(frame)
 
-            '''if court_detector.check_court_movement(frame):
-                court_detector.detect(frame)'''
-
-            # initialize landmarks lists
-            stickman_marks = np.zeros_like(frame)
-
             # detect
-            boxes = detection_model.detect_player_1(frame.copy(), court_detector)
-            boxes += detection_model.detect_top_persons(frame, court_detector, frame_i)
+            detection_model.detect_player_1(frame.copy(), court_detector)
+            detection_model.detect_top_persons(frame, court_detector, frame_i)
 
             # Create stick man figure (pose detection)
             if stickman:
-                stickman_marks = pose_extractor.extract_pose(frame, detection_model.player_1_boxes)
+                pose_extractor.extract_pose(frame, detection_model.player_1_boxes)
 
             ball_detector.detect_ball(court_detector.delete_extra_parts(frame))
 
-            probs, stroke = shot_recognition.predict_stroke(frame, detection_model.player_1_boxes[-1])
-            # Combine all landmarks
-            # TODO clean this shit
-            total_marks = np.clip(stickman_marks + boxes, 0, 255)
-            mask = np.sum(total_marks, axis=2)
-            frame[mask != 0, :] = [0, 0, 0]
-            frame = frame + total_marks if include_video else total_marks
-            frame = ball_detector.mark_positions(frame, 4)
-            '''cv2.putText(frame, 'Forehand - {:.2f}, Backhand - {:.2f}, Service - {:.2f}'.format(*probs),
-                        (100, 100),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
-            cv2.putText(frame, f'Stroke : {stroke}',
-                        (detection_model.player_1_boxes[-1][0] - 10, detection_model.player_1_boxes[-1][1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)'''
+            # probs, stroke = shot_recognition.predict_stroke(frame, detection_model.player_1_boxes[-1])
 
-            '''box_center = center_of_box(detection_model.player_1_boxes[-1])
-            player_1_y_value = box_center[1]
-            cv2.line(frame, (0,player_1_y_value), (1200, player_1_y_value), (255,0,0))'''
-
-            if court:
-                frame = court_detector.add_court_overlay(frame, overlay_color=(0, 0, 255))
-            # Output frame and save it
-            if show_video:
-                cv2.imshow('frame', frame)
-            # cv2.imwrite('../report/persons_detections_4.png', frame)
-            out.write(frame)
             total_time += (time.time() - start_time)
             print('Processing frame %d/%d  FPS %04f' % (frame_i, length, frame_i / total_time), '\r', end='')
             if not frame_i % 100:
                 print('')
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
         else:
             break
     print('Processing frame %d/%d  FPS %04f' % (length, length, length / total_time), '\n', end='')
     print('Processing completed')
     video.release()
-    out.release()
     cv2.destroyAllWindows()
 
     detection_model.find_player_2_box()
 
     if top_view:
         create_top_view(court_detector, detection_model.player_1_boxes, detection_model.player_2_boxes)
+
     # Save landmarks in csv files
     df = None
     # Save stickman data
@@ -271,17 +267,17 @@ def video_process(video_path, show_video=False, include_video=True,
         df = pose_extractor.save_to_csv(output_folder)
 
     # smooth the output data for better results
+    df_smooth = None
     if smoothing:
         smoother = Smooth()
         df_smooth = smoother.smooth(df)
         smoother.save_to_csv(output_folder)
 
-        smoothing_output_file = output_file + '_smoothing'
-        # add smoothing data to the videos
-        add_data_to_video(video_path, df_smooth, show_video, 2, output_folder,
-                          smoothing_output_file, get_stickman_line_connection(), court_detector)
+    add_data_to_video(input_video=video_path, court_detector=court_detector, players_detector=detection_model,
+                      ball_detector=ball_detector, shot_recognition=shot_recognition, skeleton_df=df_smooth,
+                      show_video=show_video, with_frame=2, output_folder=output_folder, output_file=output_file)
 
-    ball_detector.show_y_graph(detection_model.player_1_boxes)
+    ball_detector.show_y_graph(detection_model.player_1_boxes, detection_model.player_2_boxes)
 
 
 s = time.time()

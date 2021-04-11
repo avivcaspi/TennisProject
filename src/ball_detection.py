@@ -77,8 +77,11 @@ class BallDetector:
                         x, y = None, None
             self.xy_coordinates = np.append(self.xy_coordinates, np.array([[x, y]]), axis=0)
 
-    def mark_positions(self, frame, mark_num=4):
-        q = self.xy_coordinates[-mark_num:, :]
+    def mark_positions(self, frame, mark_num=4, frame_num=None, ball_color='yellow'):
+        if frame_num is not None:
+            q = self.xy_coordinates[frame_num-mark_num+1:frame_num+1, :]
+        else:
+            q = self.xy_coordinates[-mark_num:, :]
         pil_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         pil_image = Image.fromarray(pil_image)
         for i in range(q.shape[0]):
@@ -87,16 +90,25 @@ class BallDetector:
                 draw_y = q[i, 1]
                 bbox = (draw_x - 2, draw_y - 2, draw_x + 2, draw_y + 2)
                 draw = ImageDraw.Draw(pil_image)
-                draw.ellipse(bbox, outline='yellow')
+                draw.ellipse(bbox, outline=ball_color)
 
             # Convert PIL image format back to opencv image format
             frame = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
         return frame
 
-    def show_y_graph(self, box_positions):
-        boxes_centers = np.array([center_of_box(box) for box in box_positions])
-        player_1_y_values = boxes_centers[:, 1]
-        player_1_y_values -= np.array([(box[3] - box[1]) // 4 for box in box_positions])
+    def show_y_graph(self, player_1_boxes, player_2_boxes):
+        player_1_centers = np.array([center_of_box(box) for box in player_1_boxes])
+        player_1_y_values = player_1_centers[:, 1]
+        player_1_y_values -= np.array([(box[3] - box[1]) // 4 for box in player_1_boxes])
+        player_2_centers = []
+        for box in player_2_boxes:
+            if box[0] is not None:
+                player_2_centers.append(center_of_box(box))
+            else:
+                player_2_centers.append([None, None])
+        player_2_centers = np.array(player_2_centers)
+        player_2_y_values = player_2_centers[:, 1]
+
         y_values = self.xy_coordinates[:, 1].copy()
         x_values = self.xy_coordinates[:, 0].copy()
 
@@ -109,6 +121,7 @@ class BallDetector:
         plt.figure()
         plt.scatter(range(len(y_values)), y_values)
         plt.plot(range(len(player_1_y_values)), player_1_y_values, color='r')
+        plt.plot(range(len(player_2_y_values)), player_2_y_values, color='g')
         plt.show()
 
     def _get_outliers_indices(self, values, max_abs_diff=50):
