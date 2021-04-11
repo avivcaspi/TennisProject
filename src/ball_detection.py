@@ -14,7 +14,7 @@ from src.detection import center_of_box
 from src.utils import get_video_properties
 
 
-def combine_three_frames(frame1, frame2, frame3, width, height):
+def combine_three_frames_with_pred(frame1, frame2, frame3, width, height, pred2=None, pred3=None,):
     img = cv2.resize(frame1, (width, height))
     # input must be float type
     img = img.astype(np.float32)
@@ -29,8 +29,23 @@ def combine_three_frames(frame1, frame2, frame3, width, height):
     # input must be float type
     img2 = img2.astype(np.float32)
 
-    # combine three imgs to  (width , height, rgb*3)
-    imgs = np.concatenate((img, img1, img2), axis=2)
+    if pred2 is not None:
+        # resize it
+        pred2 = cv2.resize(pred2, (width, height))
+        pred2 = np.expand_dims(pred2, axis=2) * 255
+        # input must be float type
+        pred2 = pred2.astype(np.float32)
+
+        # resize it
+        pred3 = cv2.resize(pred3, (width, height))
+        pred3 = np.expand_dims(pred3, axis=2) * 255
+        # input must be float type
+        pred3 = pred3.astype(np.float32)
+
+        # combine three imgs to  (width , height, rgb*3)
+        imgs = np.concatenate((img, img1, pred2, img2, pred3), axis=2)
+    else:
+        imgs = np.concatenate((img, img1, img2), axis=2)
 
     # since the odering of TrackNet  is 'channels_first', so we need to change the axis
     imgs = np.rollaxis(imgs, 2, 0)
@@ -38,40 +53,73 @@ def combine_three_frames(frame1, frame2, frame3, width, height):
 
 
 class BallDetector:
-    def __init__(self, save_state, out_channels=2):
+    def __init__(self, save_state1,save_state2, in_channels=9, out_channels=2):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.detector = BallTrackerNet(out_channels=out_channels)
-        saved_state_dict = torch.load(save_state)
+        self.detector = BallTrackerNet(in_channels=in_channels, out_channels=out_channels)
+        self.detector_2 = BallTrackerNet(in_channels=9, out_channels=out_channels)
+        saved_state_dict = torch.load(save_state1)
         self.detector.load_state_dict(saved_state_dict['model_state'])
         self.detector.eval().to(self.device)
+        saved_state_dict = torch.load(save_state2)
+        self.detector_2.load_state_dict(saved_state_dict['model_state'])
+        self.detector_2.eval().to(self.device)
 
         self.current_frame = None
         self.last_frame = None
         self.before_last_frame = None
+
+        self.last_pred = None
+        self.before_last_pred = None
 
         self.video_width = None
         self.video_height = None
         self.model_input_width = 640
         self.model_input_height = 360
 
+        self.threshold_dist = 100
         self.xy_coordinates = np.array([[None, None], [None, None]])
 
     def detect_ball(self, frame):
         if self.video_width is None:
             self.video_width = frame.shape[1]
             self.video_height = frame.shape[0]
-        self.last_frame = self.before_last_frame
-        self.before_last_frame = self.current_frame
+            self.before_last_pred = np.zeros((self.video_height, self.video_width))
+            self.last_pred = np.zeros((self.video_height, self.video_width))
+
+        self.before_last_frame = self.last_frame
+        self.last_frame = self.current_frame
         self.current_frame = frame.copy()
-        if self.last_frame is not None:
-            frames = combine_three_frames(self.current_frame, self.before_last_frame, self.last_frame,
-                                          self.model_input_width, self.model_input_height)
+
+        if self.before_last_frame is not None:
+            frames = combine_three_frames_with_pred(self.current_frame, self.last_frame, self.before_last_frame,
+                                                    self.model_input_width, self.model_input_height,
+                                                    self.last_pred, self.before_last_pred)
             frames = (torch.from_numpy(frames) / 255).to(self.device)
-            x, y = self.detector.inference(frames)
+            x, y, pred = self.detector.inference(frames)
             if x is not None:
                 x = x * (self.video_width / self.model_input_width)
                 y = y * (self.video_height / self.model_input_height)
+                if self.xy_coordinates[-1][0] is not None:
+                    if np.linalg.norm(np.array([x,y]) - self.xy_coordinates[-1]) > self.threshold_dist:
+                        frames = combine_three_frames_with_pred(self.current_frame, self.last_frame, self.before_last_frame,
+                                                                self.model_input_width, self.model_input_height)
+                        frames = (torch.from_numpy(frames) / 255).to(self.device)
+                        x, y, pred = self.detector_2.inference(frames)
+                        if x is not None:
+                            x = x * (self.video_width / self.model_input_width)
+                            y = y * (self.video_height / self.model_input_height)
+            else:
+                frames = combine_three_frames_with_pred(self.current_frame, self.last_frame, self.before_last_frame,
+                                                        self.model_input_width, self.model_input_height)
+                frames = (torch.from_numpy(frames) / 255).to(self.device)
+                x, y, pred = self.detector_2.inference(frames)
+                if x is not None:
+                    x = x * (self.video_width / self.model_input_width)
+                    y = y * (self.video_height / self.model_input_height)
+
             self.xy_coordinates = np.append(self.xy_coordinates, np.array([[x, y]]), axis=0)
+            self.before_last_pred = self.last_pred
+            self.last_pred = np.reshape(pred, (self.model_input_height, self.model_input_width)) / 255
 
     def mark_positions(self, frame, mark_num=4):
         q = self.xy_coordinates[-mark_num:, :]
@@ -133,8 +181,8 @@ class BallDetector:
 
 
 if __name__ == "__main__":
-    a = np.array([0,1,2,3,4,5,6,7,8])
-    i = np.array([0,2,3,2,3])
+    a = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8])
+    i = np.array([0, 2, 3, 2, 3])
     a[i] = 10
     diff = np.array([val1 - val2 for val1, val2 in zip(a[1:], a)])
     max_abs_diff = 50
@@ -147,7 +195,7 @@ if __name__ == "__main__":
     outliers = [i for i in outliers if i not in none_indices]
     plt.figure()
     plt.scatter(range(len(diff)), diff)
-    plt.scatter(outliers,diff[outliers], c='r')
+    plt.scatter(outliers, diff[outliers], c='r')
     plt.show()
 
     ball_detector = BallDetector('saved states/tracknet_weights_lr_0.05_epochs_280.pth')

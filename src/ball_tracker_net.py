@@ -85,11 +85,21 @@ class ConvBlock(nn.Module):
         return self.block(x)
 
 
+class Identity(nn.Module):
+    def __init__(self):
+        super(Identity, self).__init__()
+
+    def forward(self, x):
+        return x
+
+
 class BallTrackerNet(nn.Module):
-    def __init__(self, out_channels=256, bn=True):
+    def __init__(self, in_channels=9, out_channels=256, bn=True):
         super().__init__()
         self.out_channels = out_channels
-        layer_1 = ConvBlock(in_channels=9, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
+        '''encoder = torchvision.models.segmentation.fcn_resnet50(pretrained=True)
+        encoder.fc = Identity()'''
+        layer_1 = ConvBlock(in_channels=in_channels, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_2 = ConvBlock(in_channels=64, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_3 = nn.MaxPool2d(kernel_size=2, stride=2)
         layer_4 = ConvBlock(in_channels=64, out_channels=128, kernel_size=3, pad=1, bias=True, bn=bn)
@@ -157,7 +167,7 @@ class BallTrackerNet(nn.Module):
             if self.out_channels == 2:
                 output *= 255
             x, y = self.get_center_ball(output)
-        return x, y
+        return x, y, output
 
     def get_center_ball(self, output):
         output = output.reshape((360, 640))
@@ -277,7 +287,7 @@ def get_center_ball_dist(output, x_true, y_true, num_classes=256):
 def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch_size=1):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f'Using device {device}')
-    model = BallTrackerNet(out_channels=num_classes, bn=True)
+    model = BallTrackerNet(in_channels=11, out_channels=num_classes, bn=True)
     train_losses = []
     valid_losses = []
     train_acc = []
@@ -450,17 +460,17 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
 
 
 if __name__ == "__main__":
-    '''state = torch.load("saved states/tracknet_weights_lr_1.0_epochs_125_256_classes.pth")
-    plot_graph(state['train_loss'][5:], state['valid_loss'][5:], 'loss', '../report/tracknet_losses_150_epochs_256.png')
-    plot_graph(state['train_acc'], state['valid_acc'], 'acc', '../report/tracknet_acc_150_epochs_256.png')
+    state = torch.load("saved states/tracknet_weights_lr_1.0_epochs_300.pth")
+    plot_graph(state['train_loss'][5:], state['valid_loss'][5:], 'loss', '../report/tracknet_losses_300_2.png')
+    plot_graph(state['train_acc'], state['valid_acc'], 'acc', '../report/tracknet_acc_300_2.png')
     plot_graph(np.array(state['train_success']) * 100 / (np.array(state['train_success']) + np.array(state['train_fail'])),
-               np.array(state['valid_success']) * 100 / (np.array(state['valid_success']) + np.array(state['valid_fail'])), 'success acc', '../report/tracknet_success_acc_150_epochs_256.png')
-    '''
+               np.array(state['valid_success']) * 100 / (np.array(state['valid_success']) + np.array(state['valid_fail'])), 'success acc', '../report/tracknet_success_acc_300_2.png')
+
     start = time.time()
     for lr in [1.0]:
         s = time.time()
         print(f'Start training with LR = {lr}')
-        train('saved states/tracknet_weights_lr_1.0_epochs_120.pth', epochs_num=50, lr=lr, num_classes=256,
-              batch_size=1)
+        train(epochs_num=300, lr=lr, num_classes=2,
+              batch_size=2)
         print(f'End training with LR = {lr}, Time = {time.time() - s}')
     print(f'Finished all runs, Time = {time.time() - start}')

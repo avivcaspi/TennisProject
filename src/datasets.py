@@ -136,7 +136,7 @@ class StrokesDataset(Dataset):
         return sample
 
 
-def getInputArr(path, path1, path2, width, height):
+def getInputArr(path, path1, path2, gt_path_2, gt_path_3, width, height):
     try:
         # read the image
         img = cv2.imread(path, 1)
@@ -159,8 +159,25 @@ def getInputArr(path, path1, path2, width, height):
         # input must be float type
         img2 = img2.astype(np.float32)
 
+        # read the image
+        gt2 = cv2.imread(gt_path_2, 1)
+        # resize it
+        gt2 = cv2.resize(gt2, (width, height))
+        gt2 = np.expand_dims(gt2[:, :, 0], axis=2) * 255
+        # input must be float type
+        gt2 = gt2.astype(np.float32)
+
+        # read the image
+        gt3 = cv2.imread(gt_path_3, 1)
+        # resize it
+        gt3 = cv2.resize(gt3, (width, height))
+        gt3 = np.expand_dims(gt3[:, :, 0], axis=2) * 255
+        # input must be float type
+        gt3 = gt3.astype(np.float32)
+
+
         # combine three imgs to  (width , height, rgb*3)
-        imgs = np.concatenate((img, img1, img2), axis=2)
+        imgs = np.concatenate((img, img1, gt2, img2, gt3), axis=2)
 
         # since the odering of TrackNet  is 'channels_first', so we need to change the axis
         imgs = np.rollaxis(imgs, 2, 0)
@@ -217,12 +234,19 @@ class TrackNetDataset(Dataset):
             idx = idx.tolist()
 
         path1, path2, path3, gt_path, x, y = self.df.iloc[idx, :]
+        filename2 = path2.split('\\')[-1].split('.')[0] + '.png'
+        gt_path_2 = gt_path.split('\\')[0] + '\\' + filename2
+        filename3 = path3.split('\\')[-1].split('.')[0] + '.png'
+        gt_path_3 = gt_path.split('\\')[0] + '\\' + filename3
         if np.math.isnan(x):
             x = -1
             y = -1
-        vid_frames = getInputArr(path1, path2, path3, self.input_width, self.input_height)
 
         gt_path = gt_path.replace("groundtruth", f"groundtruth_{self.num_classes}")
+        gt_path_2 = gt_path_2.replace("groundtruth", f"groundtruth_{self.num_classes}")
+        gt_path_3 = gt_path_3.replace("groundtruth", f"groundtruth_{self.num_classes}")
+        vid_frames = getInputArr(path1, path2, path3, gt_path_2, gt_path_3, self.input_width, self.input_height)
+
         gt = getOutputArr(gt_path, self.num_classes, self.output_width, self.output_height)
 
         vid_frames = torch.from_numpy(vid_frames) / 255
