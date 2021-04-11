@@ -40,7 +40,7 @@ class DetectionModel:
         self.current_frame = None
         self.next_frame = None
         self.movement_threshold = 200
-        self.mot_tracker = Sort()
+        self.mot_tracker = Sort(max_age=10, min_hits=3, iou_threshold=0.05)
 
     def detect_player_1(self, image, court_detector):
         boxes = np.zeros_like(image)
@@ -53,27 +53,14 @@ class DetectionModel:
                 court_type = 1
                 white_ref = court_detector.court_reference.get_court_mask(court_type)
                 white_mask = cv2.warpPerspective(white_ref, court_detector.court_warp_matrix[-1], image.shape[1::-1])
-                # TODO find different way to add more space at the top
                 if court_type == 2:
                     white_mask = cv2.dilate(white_mask, np.ones((50, 1)), anchor=(0, 0))
                 image_court = image.copy()
                 image_court[white_mask == 0, :] = (0, 0, 0)
-            '''max_values = np.max(np.max(image_court, axis=1), axis=1)
-            max_values_index = np.where(max_values > 0)[0]
-            top_y = max_values_index[0]
-            bottom_y = max_values_index[-1]'''
-            # cv2.imwrite('../report/frame_only_court.png', image_court)
-            '''cv2.imshow('res', image_court)
-            if cv2.waitKey(0) & 0xff == 27:
-                cv2.destroyAllWindows()'''
 
-            # mask = self.find_canadicate(image)
-            # image[mask == 0, :] = (0,0,0)
-            # image_court = image_court[top_y:bottom_y, :, :]
 
             persons_boxes, _ = self._detect(image_court)
             if len(persons_boxes) > 0:
-                # TODO find a different way to choose correct box
                 # biggest_box = sorted(persons_boxes, key=lambda x: area_of_box(x), reverse=True)[0]
                 biggest_box = max(persons_boxes, key=lambda x: area_of_box(x)).round()
                 self.player_1_boxes.append(biggest_box)
@@ -87,9 +74,7 @@ class DetectionModel:
             max(xt - margin, 0), max(yt - margin, 0), min(xb + margin, self.v_width), min(yb + margin, self.v_height))
             trimmed_image = image[max(yt - margin, 0): min(yb + margin, self.v_height),
                             max(xt - margin, 0): min(xb + margin, self.v_width), :]
-            '''cv2.imshow('res', trimmed_image)
-            if cv2.waitKey(0) & 0xff == 27:
-                cv2.destroyAllWindows()'''
+
 
             persons_boxes, _ = self._detect(trimmed_image, self.PERSON_SECONDARY_SCORE)
             if len(persons_boxes) > 0:
@@ -104,7 +89,6 @@ class DetectionModel:
                     if distance < smallest_dist:
                         smallest_dist = distance
                         closest_box = orig_box_location
-                # TODO the patch is small so this might not be needed
                 if smallest_dist < 100:
                     self.counter = 0
                     self.player_1_boxes.append(closest_box)
@@ -121,7 +105,7 @@ class DetectionModel:
         return boxes
 
     def detect_top_persons(self, image, court_detector, frame_num):
-        frame = image.copy()
+        boxes = np.zeros_like(image)
 
         if court_detector is None:
             image_court = image.copy()
@@ -133,76 +117,42 @@ class DetectionModel:
             image_court = image.copy()
             image_court[white_mask == 0, :] = (0, 0, 0)
 
-        # cv2.imwrite('../report/frame_only_court.png', image_court)
-        '''cv2.imshow('res', image_court)
-        if cv2.waitKey(1) & 0xff == 27:
-            cv2.destroyAllWindows()'''
-
         persons_boxes, probs = self._detect(image_court, self.PERSON_SECONDARY_SCORE)
-        if len(persons_boxes) > 0:
-            pass
-            #self.persons_boxes.append(persons_boxes)
-
-        else:
+        if len(persons_boxes) == 0:
             persons_boxes, probs = None, None
-            #self.persons_boxes.append([])
 
         tracked_objects = self.mot_tracker.update(persons_boxes, probs)
+        for det_person in self.persons_boxes.keys():
+            self.persons_boxes[det_person].append([None, None, None, None])
         for box in tracked_objects:
-            cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), [255, 0, 255], 2)
-            cv2.putText(frame, f'Player {int(box[4])}', (int(box[0]) - 10, int(box[1] - 10)),
+            cv2.rectangle(boxes, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), [255, 0, 255], 2)
+            cv2.putText(boxes, f'Player {int(box[4])}', (int(box[0]) - 10, int(box[1] - 10)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
             if int(box[4]) in self.persons_boxes.keys():
-                self.persons_boxes[int(box[4])].append(box[:4])
+                self.persons_boxes[int(box[4])][-1] = box[:4]
             else:
-                self.persons_boxes[int(box[4])] = []
+                self.persons_boxes[int(box[4])] = [box[:4]]
                 self.persons_first_appearance[int(box[4])] = frame_num
-        return frame
+
+        return boxes
 
     def calculate_all_persons_dists(self):
         for id, person_boxes in self.persons_boxes.items():
+            person_boxes = [box for box in person_boxes if box[0] is not None]
             dist = boxes_dist(person_boxes)
             self.persons_dists[id] = dist
         return self.persons_dists
 
     def find_player_2_box(self):
         dists = self.calculate_all_persons_dists()
-        threshold = 1
-        to_del = []
-        for key, val in dists.items():
-            length = len(self.persons_boxes[key])
-            if length > 0:
-                average_dist = val / length
-            else:
-                average_dist = 0
-            if average_dist < threshold:
-                to_del.append(key)
-        for key in to_del:
-            dists.pop(key)
-            self.persons_first_appearance.pop(key)
-        persons_sections = {key: [val, val + len(self.persons_boxes[key])] for key, val in
-                            self.persons_first_appearance.items()}
-        detections = []
-        while len(dists) > 0:
-            max_key = max(dists.items(), key=operator.itemgetter(1))[0]
-            max_sec = persons_sections[max_key].copy()
-            detections.append(max_key)
-            persons_sections.pop(max_key)
-            dists.pop(max_key)
-            for key, sec in persons_sections.items():
-                if sections_intersect(max_sec, sec):
-                    if key in dists.keys():
-                        dists.pop(key)
-        detections = sorted(detections)
-        print(detections)
+
+        max_key = max(dists.items(), key=operator.itemgetter(1))[0]
         boxes = []
-        for person in detections:
-            start = self.persons_first_appearance[person]
-            missing = start - 1 - len(boxes)
-            boxes.extend([[0, 0, 0, 0]] * missing)
-            boxes.extend(self.persons_boxes[person])
-        missing = len(self.player_1_boxes) - len(boxes)
-        boxes.extend([[0, 0, 0, 0]] * missing)
+
+        start = self.persons_first_appearance[max_key]
+        missing = start - 1 - len(boxes)
+        boxes.extend([[None, None, None, None]] * missing)
+        boxes.extend(self.persons_boxes[max_key])
         self.player_2_boxes = boxes
 
     def _detect(self, image, person_min_score=None):
@@ -317,12 +267,6 @@ def area_of_box(box):
     height = box[3] - box[1]
     width = box[2] - box[0]
     return height * width
-
-
-def boxes_diff(frame, box1, box2):
-    box1 = frame[box1[3]:box1[1], box1[2]:box1[0]].copy()
-    box2 = frame[box2[3]:box2[1], box2[2]:box2[0]].copy()
-    avg_color1 = np.mean(np.mean(box1, axis=0), axis=0)
 
 
 def boxes_dist(boxes):

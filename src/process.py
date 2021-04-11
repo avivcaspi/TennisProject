@@ -118,9 +118,15 @@ def create_top_view(court_detector, player_1_boxes, player_2_boxes):
         feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mat[i]).reshape(-1)
         positions_1.append(feet_court_pos)
     for i, box in enumerate(player_2_boxes):
-        feet_pos = np.array([(box[0] + (box[2] - box[0]) / 2), box[3]]).reshape((1, 1, 2))
-        feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mat[i]).reshape(-1)
-        positions_2.append(feet_court_pos)
+        if box[0] is not None:
+            feet_pos = np.array([(box[0] + (box[2] - box[0]) / 2), box[3]]).reshape((1, 1, 2))
+            feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mat[i]).reshape(-1)
+            positions_2.append(feet_court_pos)
+        elif len(positions_2) > 0:
+            positions_2.append(positions_2[-1])
+        else:
+            positions_2.append(np.array([0,0]))
+
     positions_1 = np.array(positions_1)
     smoothed_1 = np.zeros_like(positions_1)
     smoothed_1[:, 0] = signal.savgol_filter(positions_1[:, 0], 7, 2)
@@ -206,7 +212,7 @@ def video_process(video_path, show_video=False, include_video=True,
 
             # detect
             boxes = detection_model.detect_player_1(frame.copy(), court_detector)
-            detection_model.detect_top_persons(frame, court_detector, frame_i)
+            boxes += detection_model.detect_top_persons(frame, court_detector, frame_i)
 
             # Create stick man figure (pose detection)
             if stickman:

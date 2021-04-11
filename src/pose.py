@@ -80,7 +80,6 @@ class PoseExtractor:
 
         # add bounding box for each person found
         if self.box:
-            # TODO  add detection of racket and ball
             # Marking every person found in the image with high score
             for box, label, score in zip(p[0]['boxes'][:self.person_num], p[0]['labels'], p[0]['scores']):
                 if label == self.PERSON_LABEL and score > self.SCORE_MIN:
