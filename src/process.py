@@ -4,6 +4,8 @@ import time
 import cv2
 import numpy as np
 from scipy import signal
+from scipy.interpolate import interp1d
+from scipy.signal import find_peaks
 
 from detection import DetectionModel, center_of_box
 from pose import PoseExtractor
@@ -12,6 +14,62 @@ from src.ball_detection import BallDetector
 from src.shot_recognition import ActionRecognition
 from utils import get_video_properties, get_dtype, get_stickman_line_connection
 from court_detection import CourtDetector
+import matplotlib.pyplot as plt
+
+
+def plot_player_ball_dist(player_boxes, ball_positions, skeleton_df, title):
+
+    ball_x, ball_y = ball_positions[:, 0], ball_positions[:, 1]
+    smooth_x = signal.savgol_filter(ball_x, 3, 2)
+    smooth_y = signal.savgol_filter(ball_y, 3, 2)
+
+    x = np.arange(0, len(smooth_y))
+    indices = [i for i, val in enumerate(smooth_y) if np.isnan(val)]
+    x = np.delete(x, indices)
+    y1 = np.delete(smooth_y, indices)
+    y2 = np.delete(smooth_x, indices)
+    f2_y = interp1d(x, y1, kind='cubic', fill_value="extrapolate")
+    f2_x = interp1d(x, y2, kind='cubic', fill_value="extrapolate")
+    xnew = np.linspace(0, len(ball_y), num=len(ball_y), endpoint=True)
+    plt.plot(np.arange(0, len(smooth_y)), smooth_y, 'o', xnew,
+             f2_y(xnew), '-r')
+    plt.legend(['data', 'inter'], loc='best')
+    plt.show()
+
+    positions = f2_y(xnew)
+    peaks, _ = find_peaks(positions)
+    plt.plot(positions)
+    plt.plot(peaks, positions[peaks], "x")
+    plt.show()
+
+    left_wrist_index = 9
+    right_wrist_index = 10
+    skeleton_df = skeleton_df.fillna(-1)
+    left_wrist_pos = skeleton_df.iloc[:, [left_wrist_index, left_wrist_index + 15]].values
+    right_wrist_pos = skeleton_df.iloc[:, [right_wrist_index, right_wrist_index + 15]].values
+
+    dists = []
+    for i, player_box in enumerate(player_boxes):
+        if player_box[0] is not None:
+            player_center = center_of_box(player_box)
+            ball_pos = np.array([f2_x(i), f2_y(i)])
+            box_dist = np.linalg.norm(player_center - ball_pos)
+            right_wrist_dist, left_wrist_dist = np.inf, np.inf
+            if right_wrist_pos[i,0] > 0:
+                right_wrist_dist = np.linalg.norm(right_wrist_pos[i, :] - ball_pos)
+            if left_wrist_pos[i, 0] > 0:
+                left_wrist_dist = np.linalg.norm(left_wrist_pos[i, :] - ball_pos)
+            dists.append(min(box_dist, right_wrist_dist, left_wrist_dist))
+        else:
+            dists.append(None)
+    dists = np.array(dists)
+
+    strokes_indices = []
+    for peak in peaks:
+        print(peak, dists[peak])
+        if dists[peak] < 100:
+            strokes_indices.append(peak)
+    return strokes_indices
 
 
 def mark_player_box(frame, boxes, frame_num):
@@ -64,6 +122,9 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
     player1_boxes = players_detector.player_1_boxes
     player2_boxes = players_detector.player_2_boxes
 
+    strokes_indices = plot_player_ball_dist(player1_boxes, ball_detector.xy_coordinates, skeleton_df,'Bottom Player')
+    # plot_player_ball_dist(player2_boxes, ball_detector.xy_coordinates, 'Top Player')
+
     if skeleton_df is not None:
         skeleton_df = skeleton_df.fillna(-1)
 
@@ -113,6 +174,13 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
         if skeleton_df is not None:
             img, img_no_frame = mark_skeleton(skeleton_df, img, img_no_frame, frame_number)
 
+        for i in range(-5,5):
+            if frame_number + i in strokes_indices:
+                cv2.putText(img, 'STROKE HIT', (200, 200),
+                            cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 255), 3)
+                break
+        '''cv2.putText(img, f'Dist {dists[frame_number]}', (200, 200),
+                    cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 255), 3)'''
         # display frame
         if show_video:
             cv2.imshow('Output', img)
@@ -149,15 +217,19 @@ def create_top_view(court_detector, player_1_boxes, player_2_boxes):
         feet_pos = np.array([(box[0] + (box[2] - box[0]) / 2).item(), box[3].item()]).reshape((1, 1, 2))
         feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mat[i]).reshape(-1)
         positions_1.append(feet_court_pos)
+    mask = []
     for i, box in enumerate(player_2_boxes):
         if box[0] is not None:
             feet_pos = np.array([(box[0] + (box[2] - box[0]) / 2), box[3]]).reshape((1, 1, 2))
             feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mat[i]).reshape(-1)
             positions_2.append(feet_court_pos)
+            mask.append(True)
         elif len(positions_2) > 0:
             positions_2.append(positions_2[-1])
+            mask.append(False)
         else:
             positions_2.append(np.array([0, 0]))
+            mask.append(False)
 
     positions_1 = np.array(positions_1)
     smoothed_1 = np.zeros_like(positions_1)
@@ -168,10 +240,13 @@ def create_top_view(court_detector, player_1_boxes, player_2_boxes):
     smoothed_2[:, 0] = signal.savgol_filter(positions_2[:, 0], 7, 2)
     smoothed_2[:, 1] = signal.savgol_filter(positions_2[:, 1], 7, 2)
 
+    smoothed_2[not mask, :] = [None, None]
+
     for feet_pos_1, feet_pos_2 in zip(smoothed_1, smoothed_2):
         frame = court.copy()
         frame = cv2.circle(frame, (int(feet_pos_1[0]), int(feet_pos_1[1])), 10, (0, 0, 255), 15)
-        frame = cv2.circle(frame, (int(feet_pos_2[0]), int(feet_pos_2[1])), 10, (0, 0, 255), 15)
+        if feet_pos_2[0] is not None:
+            frame = cv2.circle(frame, (int(feet_pos_2[0]), int(feet_pos_2[1])), 10, (0, 0, 255), 15)
         out.write(frame)
     out.release()
     cv2.destroyAllWindows()
@@ -275,12 +350,12 @@ def video_process(video_path, show_video=False, include_video=True,
 
     add_data_to_video(input_video=video_path, court_detector=court_detector, players_detector=detection_model,
                       ball_detector=ball_detector, shot_recognition=shot_recognition, skeleton_df=df_smooth,
-                      show_video=show_video, with_frame=2, output_folder=output_folder, output_file=output_file)
+                      show_video=show_video, with_frame=1, output_folder=output_folder, output_file=output_file)
 
     ball_detector.show_y_graph(detection_model.player_1_boxes, detection_model.player_2_boxes)
 
 
 s = time.time()
-video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=False, stickman_box=False, smoothing=False,
-              court=True, top_view=True)
+video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
+              court=True, top_view=False)
 print(f'Total computation time : {time.time() - s} seconds')

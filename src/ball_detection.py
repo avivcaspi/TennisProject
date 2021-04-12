@@ -8,6 +8,9 @@ import torchvision
 import torch.nn as nn
 from PIL import Image, ImageDraw
 import matplotlib.pyplot as plt
+from scipy import signal
+from scipy.signal import find_peaks
+
 from src.ball_tracker_net import BallTrackerNet
 from src.court_detection import CourtDetector
 from src.detection import center_of_box
@@ -150,25 +153,8 @@ class BallDetector:
 
 
 if __name__ == "__main__":
-    a = np.array([0,1,2,3,4,5,6,7,8])
-    i = np.array([0,2,3,2,3])
-    a[i] = 10
-    diff = np.array([val1 - val2 for val1, val2 in zip(a[1:], a)])
-    max_abs_diff = 50
-    outliers = []
-    for i, (val1, val2) in enumerate(zip(diff, diff[1:])):
-        if abs(val1) > max_abs_diff and abs(val2) > max_abs_diff:
-            outliers.append(i + 1)
-
-    none_indices = [i for i, y in enumerate(a) if y == -1]
-    outliers = [i for i in outliers if i not in none_indices]
-    plt.figure()
-    plt.scatter(range(len(diff)), diff)
-    plt.scatter(outliers,diff[outliers], c='r')
-    plt.show()
-
-    ball_detector = BallDetector('saved states/tracknet_weights_lr_0.05_epochs_280.pth')
-    cap = cv2.VideoCapture('../videos/vid7.mp4')
+    ball_detector = BallDetector('saved states/tracknet_weights_lr_1.0_epochs_150_last_trained.pth')
+    cap = cv2.VideoCapture('../videos/vid1.mp4')
     # get videos properties
     fps, length, v_width, v_height = get_video_properties(cap)
 
@@ -181,9 +167,31 @@ if __name__ == "__main__":
 
         ball_detector.detect_ball(frame)
 
-    max_value_indices = ball_detector.get_max_value_frames()
-    ball_detector.show_y_graph()
 
     cap.release()
-
     cv2.destroyAllWindows()
+
+    from scipy.interpolate import interp1d
+
+    y_values = ball_detector.xy_coordinates[:,1]
+
+    new = signal.savgol_filter(y_values, 3, 2)
+
+    x = np.arange(0, len(new))
+    indices = [i for i, val in enumerate(new) if np.isnan(val)]
+    x = np.delete(x, indices)
+    y = np.delete(new, indices)
+    f = interp1d(x, y, fill_value="extrapolate")
+    f2 = interp1d(x, y, kind='cubic', fill_value="extrapolate")
+    xnew = np.linspace(0, len(y_values), num=len(y_values), endpoint=True)
+    plt.plot(np.arange(0, len(new)), new, 'o',xnew,
+             f2(xnew), '-r')
+    plt.legend(['data', 'inter'], loc='best')
+    plt.show()
+
+    positions = f2(xnew)
+    peaks, _ = find_peaks(positions, distance=30)
+    a = np.diff(peaks)
+    plt.plot(positions)
+    plt.plot(peaks, positions[peaks], "x")
+    plt.show()

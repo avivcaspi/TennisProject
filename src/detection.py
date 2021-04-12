@@ -145,14 +145,31 @@ class DetectionModel:
 
     def find_player_2_box(self):
         dists = self.calculate_all_persons_dists()
-
-        max_key = max(dists.items(), key=operator.itemgetter(1))[0]
+        min_length = 20
         boxes = []
 
-        start = self.persons_first_appearance[max_key]
-        missing = start - 1 - len(boxes)
-        boxes.extend([[None, None, None, None]] * missing)
-        boxes.extend(self.persons_boxes[max_key])
+        persons_sections = {key: [val, val + len(self.persons_boxes[key]) - np.argmax([box[0] != None for box in self.persons_boxes[key][::-1]]) - 1] for key, val in
+                            self.persons_first_appearance.items()}
+        detections = []
+        while len(dists) > 0:
+            max_key = max(dists.items(), key=operator.itemgetter(1))[0]
+            max_sec = persons_sections[max_key].copy()
+            if max_sec[1] - max_sec[0] < min_length:
+                dists.pop(max_key)
+
+                continue
+            detections.append(max_key)
+            dists.pop(max_key)
+            for key, sec in persons_sections.items():
+                if sections_intersect(max_sec, sec):
+                    if key in dists.keys():
+                        dists.pop(key)
+        detections = sorted(detections)
+        for det in detections:
+            start = self.persons_first_appearance[det]
+            missing = start - 1 - len(boxes)
+            boxes.extend([[None, None, None, None]] * missing)
+            boxes.extend(self.persons_boxes[det][:persons_sections[det][1]])
         self.player_2_boxes = boxes
 
     def _detect(self, image, person_min_score=None):
@@ -178,86 +195,10 @@ class DetectionModel:
                 probs.append(score.detach().cpu().numpy())
         return persons_boxes, probs
 
-    def diff_image(self, next_frame):
-        gray = cv2.cvtColor(next_frame, cv2.COLOR_BGR2GRAY)
-        self.last_frame = self.current_frame
-        self.current_frame = self.next_frame
-        self.next_frame = gray.copy()
-        if self.last_frame is not None:
-            first_motion = abs(self.current_frame - self.last_frame)
-            first_motion = cv2.threshold(first_motion, self.movement_threshold, 255, cv2.THRESH_BINARY)[1]
-            second_motion = abs(self.next_frame - self.last_frame)
-            second_motion = cv2.threshold(second_motion, self.movement_threshold, 255, cv2.THRESH_BINARY)[1]
-            motion_matrix = first_motion.copy()
-            motion_matrix[second_motion > 0] = 0
-
-            motion_matrix = cv2.dilate(motion_matrix, cv2.getStructuringElement(cv2.MORPH_RECT, (20, 20)))
-
-            contours, _ = cv2.findContours(motion_matrix, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-
-            f = cv2.cvtColor(motion_matrix, cv2.COLOR_GRAY2BGR)
-            fr = cv2.cvtColor(self.current_frame, cv2.COLOR_GRAY2BGR)
-            z = np.zeros_like(f)
-            for i, c in enumerate(contours):
-                if 2000 < cv2.contourArea(c) < 10000:
-                    x, y, w, h = cv2.boundingRect(c)
-                    cv2.rectangle(fr, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                # cv2.drawContours(z, contours_poly, i, (255, 0, 0))
-            cv2.imshow('sdf', fr)
-            if cv2.waitKey(100) & 0xff == 27:
-                cv2.destroyAllWindows()
-
-    def find_canadicate(self, image):
-        frame = image.copy()
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        frame = cv2.medianBlur(frame, 3)
-
-        fgMask = self.backSub.apply(frame)
-        fgMask = cv2.threshold(fgMask, 10, 1, cv2.THRESH_BINARY)[1]
-
-        diff = self.im_diff.diff(frame)
-
-        res = diff * fgMask * 255
-        res = cv2.dilate(res, np.ones((40, 25)))
-        contours, _ = cv2.findContours(res, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-        contours_poly = []
-        boundRects = []
-        max_area = 0
-        max_c = None
-        for c in contours:
-            if 200 < cv2.contourArea(c) < 12000:
-                contours_poly.append(cv2.approxPolyDP(c, 3, True))
-                boundRects.append(cv2.boundingRect(contours_poly[-1]))
-
-        drawing = np.zeros((res.shape[0], res.shape[1], 3), dtype=np.uint8)
-        f = image.copy()
-        mask = np.ones_like(image)
-        for i, boundRect in enumerate(boundRects):
-            mask[int(boundRect[1]):int(boundRect[1] + boundRect[3]), int(boundRect[0]):int(boundRect[0] + boundRect[2]),
-            :] = (0, 0, 0)
-            f = f * mask
-            '''cv2.imshow('res', box)
-            if cv2.waitKey(0) & 0xff == 27:
-                cv2.destroyAllWindows()'''
-
-            color = (0, 0, 255)
-            cv2.drawContours(drawing, contours_poly, i, (255, 0, 0))
-            cv2.rectangle(drawing, (int(boundRect[0]), int(boundRect[1])),
-                          (int(boundRect[0] + boundRect[2]), int(boundRect[1] + boundRect[3])), color, 2)
-
-        res = cv2.cvtColor(res, cv2.COLOR_GRAY2BGR)
-        side_by_side = np.concatenate([res, image], axis=1)
-        side_by_side = cv2.resize(side_by_side, (1920, 540))
-        cv2.imshow('Contours', side_by_side)
-        c = image.copy()
-        c[res == 0] = 0
-
-        if cv2.waitKey(0) & 0xff == 27:
-            cv2.destroyAllWindows()
-        return res
-
 
 def center_of_box(box):
+    if box[0] is None:
+        return None, None
     height = box[3] - box[1]
     width = box[2] - box[0]
     return box[0] + width / 2, box[1] + height / 2
