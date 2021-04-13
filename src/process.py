@@ -66,9 +66,18 @@ def plot_player_ball_dist(player_boxes, ball_positions, skeleton_df, title):
 
     strokes_indices = []
     for peak in peaks:
-        print(peak, dists[peak])
-        if dists[peak] < 100:
+        player_box_height = max(player_boxes[peak][3] - player_boxes[peak][1], 130)
+        if dists[peak] < (player_box_height * 4/5):
             strokes_indices.append(peak)
+    diffs = np.diff(strokes_indices)
+    to_del = []
+    for i, diff in enumerate(diffs):
+        if diff < 40:
+            max_in = np.argmax([dists[strokes_indices[i]], dists[strokes_indices[i+1]]])
+            to_del.append(i + max_in)
+
+    strokes_indices = np.delete(strokes_indices, to_del)
+
     return strokes_indices
 
 
@@ -177,7 +186,7 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
         for i in range(-5,5):
             if frame_number + i in strokes_indices:
                 cv2.putText(img, 'STROKE HIT', (200, 200),
-                            cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 255), 3)
+                            cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 255) if i != 0 else (255,0,0), 3)
                 break
         '''cv2.putText(img, f'Dist {dists[frame_number]}', (200, 200),
                     cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 255), 3)'''
@@ -356,6 +365,6 @@ def video_process(video_path, show_video=False, include_video=True,
 
 
 s = time.time()
-video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
+video_process(video_path='../videos/vid7.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
               court=True, top_view=False)
 print(f'Total computation time : {time.time() - s} seconds')

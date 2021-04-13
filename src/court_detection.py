@@ -220,7 +220,7 @@ class CourtDetector:
             if cv2.waitKey(0) & 0xff == 27:
                 cv2.destroyAllWindows()
         print(f'Score = {max_score}')
-        print(k)
+        print(f'Combinations tested = {k}')
 
         return max_mat, max_inv_mat, max_score
 

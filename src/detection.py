@@ -169,7 +169,7 @@ class DetectionModel:
             start = self.persons_first_appearance[det]
             missing = start - 1 - len(boxes)
             boxes.extend([[None, None, None, None]] * missing)
-            boxes.extend(self.persons_boxes[det][:persons_sections[det][1]])
+            boxes.extend(self.persons_boxes[det][:persons_sections[det][1] - persons_sections[det][0] + 1])
         self.player_2_boxes = boxes
 
     def _detect(self, image, person_min_score=None):
