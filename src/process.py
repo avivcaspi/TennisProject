@@ -11,13 +11,41 @@ from detection import DetectionModel, center_of_box
 from pose import PoseExtractor
 from smooth import Smooth
 from src.ball_detection import BallDetector
-from src.shot_recognition import ActionRecognition
+from src.stroke_recognition import ActionRecognition
 from utils import get_video_properties, get_dtype, get_stickman_line_connection
 from court_detection import CourtDetector
 import matplotlib.pyplot as plt
 
 
-def plot_player_ball_dist(player_boxes, ball_positions, skeleton_df, title):
+def get_stroke_predictions(video_path, stroke_recognition, strokes_frames, player_boxes):
+    predictions = {}
+    cap = cv2.VideoCapture(video_path)
+    fps, length, width, height = get_video_properties(cap)
+    video_length = 2
+    for frame_num in strokes_frames:
+        starting_frame = max(0, frame_num - int(video_length * fps * 2 / 3))
+        cap.set(1, starting_frame)
+        i = 0
+
+        while True:
+
+            ret, frame = cap.read()
+
+            if not ret:
+                break
+
+            stroke_recognition.add_frame(frame, player_boxes[starting_frame + i])
+            i += 1
+            if i == int(video_length * fps):
+                break
+
+        probs, stroke = stroke_recognition.predict_saved_seq()
+        predictions[frame_num] = {'probs': probs, 'stroke': stroke}
+    cap.release()
+    return predictions
+
+
+def find_strokes_indices(player_boxes, ball_positions, skeleton_df):
 
     ball_x, ball_y = ball_positions[:, 0], ball_positions[:, 1]
     smooth_x = signal.savgol_filter(ball_x, 3, 2)
@@ -36,10 +64,10 @@ def plot_player_ball_dist(player_boxes, ball_positions, skeleton_df, title):
     plt.legend(['data', 'inter'], loc='best')
     plt.show()
 
-    positions = f2_y(xnew)
-    peaks, _ = find_peaks(positions)
-    plt.plot(positions)
-    plt.plot(peaks, positions[peaks], "x")
+    coordinates = f2_y(xnew)
+    peaks, _ = find_peaks(coordinates)
+    plt.plot(coordinates)
+    plt.plot(peaks, coordinates[peaks], "x")
     plt.show()
 
     left_wrist_index = 9
@@ -69,16 +97,28 @@ def plot_player_ball_dist(player_boxes, ball_positions, skeleton_df, title):
         player_box_height = max(player_boxes[peak][3] - player_boxes[peak][1], 130)
         if dists[peak] < (player_box_height * 4/5):
             strokes_indices.append(peak)
-    diffs = np.diff(strokes_indices)
-    to_del = []
-    for i, diff in enumerate(diffs):
-        if diff < 40:
-            max_in = np.argmax([dists[strokes_indices[i]], dists[strokes_indices[i+1]]])
-            to_del.append(i + max_in)
 
-    strokes_indices = np.delete(strokes_indices, to_del)
+    while True:
+        diffs = np.diff(strokes_indices)
+        to_del = []
+        for i, diff in enumerate(diffs):
+            if diff < 40:
+                max_in = np.argmax([dists[strokes_indices[i]], dists[strokes_indices[i+1]]])
+                to_del.append(i + max_in)
 
-    return strokes_indices
+        strokes_indices = np.delete(strokes_indices, to_del)
+        if len(to_del) == 0:
+            break
+
+    bounces_indices = [x for x in peaks if x not in strokes_indices]
+    plt.figure()
+    plt.plot(coordinates)
+    plt.plot(strokes_indices, coordinates[strokes_indices], "or")
+    plt.plot(bounces_indices, coordinates[bounces_indices], "og")
+    plt.legend(['data', 'strokes', 'bounces'], loc='best')
+    plt.show()
+
+    return strokes_indices, bounces_indices, f2_x, f2_y
 
 
 def mark_player_box(frame, boxes, frame_num):
@@ -113,7 +153,7 @@ def mark_skeleton(skeleton_df, img, img_no_frame, frame_number):
     return img, img_no_frame
 
 
-def add_data_to_video(input_video, court_detector, players_detector, ball_detector, shot_recognition, skeleton_df,
+def add_data_to_video(input_video, court_detector, players_detector, ball_detector, strokes_predictions, skeleton_df,
                       show_video, with_frame, output_folder, output_file):
     """
     Creates new videos with pose stickman, face landmarks and blinks counter
@@ -130,9 +170,6 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
 
     player1_boxes = players_detector.player_1_boxes
     player2_boxes = players_detector.player_2_boxes
-
-    strokes_indices = plot_player_ball_dist(player1_boxes, ball_detector.xy_coordinates, skeleton_df,'Bottom Player')
-    # plot_player_ball_dist(player2_boxes, ball_detector.xy_coordinates, 'Top Player')
 
     if skeleton_df is not None:
         skeleton_df = skeleton_df.fillna(-1)
@@ -183,13 +220,21 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
         if skeleton_df is not None:
             img, img_no_frame = mark_skeleton(skeleton_df, img, img_no_frame, frame_number)
 
-        for i in range(-5,5):
-            if frame_number + i in strokes_indices:
+        for i in range(-10,10):
+            if frame_number + i in strokes_predictions.keys():
                 cv2.putText(img, 'STROKE HIT', (200, 200),
                             cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 255) if i != 0 else (255,0,0), 3)
+
+                probs, stroke = strokes_predictions[frame_number + i]['probs'], strokes_predictions[frame_number + i]['stroke']
+                cv2.putText(img, 'Forehand - {:.2f}, Backhand - {:.2f}, Service - {:.2f}'.format(*probs),
+                            (200, 400),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
+                cv2.putText(img, f'Stroke : {stroke}',
+                            (int(player1_boxes[frame_number][0]) - 10, int(player1_boxes[frame_number][1]) - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
+
                 break
-        '''cv2.putText(img, f'Dist {dists[frame_number]}', (200, 200),
-                    cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 255), 3)'''
+
         # display frame
         if show_video:
             cv2.imshow('Output', img)
@@ -205,7 +250,7 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
             final_frame = np.concatenate([img, img_no_frame], 1)
         out.write(final_frame)
         frame_number += 1
-    print('Creating new videos frame %d/%d  ' % (length, length), '\n', end='')
+    print('Creating new video frames %d/%d  ' % (length, length), '\n', end='')
     print(f'New videos created, file name - {output_file}.avi')
     cap.release()
     out.release()
@@ -286,8 +331,8 @@ def video_process(video_path, show_video=False, include_video=True,
     court_detector = CourtDetector()
     detection_model = DetectionModel(dtype=dtype)
     pose_extractor = PoseExtractor(person_num=1, box=stickman_box, dtype=dtype) if stickman else None
-    shot_recognition = ActionRecognition('saved_state_strokes_3e-05_50%_labels')
-    ball_detector = BallDetector('saved states/tracknet_weights_lr_1.0_epochs_150_last_trained.pth', out_channels=2)
+    stroke_recognition = ActionRecognition('saved_state_strokes_3e-05_50%_labels')
+    ball_detector = BallDetector('saved states/tracknet_weights_2_classes.pth', out_channels=2)
 
     # Load videos from videos path
     video = cv2.VideoCapture(video_path)
@@ -326,8 +371,6 @@ def video_process(video_path, show_video=False, include_video=True,
 
             ball_detector.detect_ball(court_detector.delete_extra_parts(frame))
 
-            # probs, stroke = shot_recognition.predict_stroke(frame, detection_model.player_1_boxes[-1])
-
             total_time += (time.time() - start_time)
             print('Processing frame %d/%d  FPS %04f' % (frame_i, length, frame_i / total_time), '\r', end='')
             if not frame_i % 100:
@@ -357,14 +400,22 @@ def video_process(video_path, show_video=False, include_video=True,
         df_smooth = smoother.smooth(df)
         smoother.save_to_csv(output_folder)
 
+    player_1_strokes_indices, bounces_indices, f2_x, f2_y = find_strokes_indices(detection_model.player_1_boxes,
+                                                    ball_detector.xy_coordinates, df_smooth)
+
+    ball_detector.bounces_indices = bounces_indices
+    ball_detector.coordinates = (f2_x, f2_y)
+    predictions = get_stroke_predictions(video_path, stroke_recognition,
+                                         player_1_strokes_indices, detection_model.player_1_boxes)
+
     add_data_to_video(input_video=video_path, court_detector=court_detector, players_detector=detection_model,
-                      ball_detector=ball_detector, shot_recognition=shot_recognition, skeleton_df=df_smooth,
+                      ball_detector=ball_detector, strokes_predictions=predictions, skeleton_df=df_smooth,
                       show_video=show_video, with_frame=1, output_folder=output_folder, output_file=output_file)
 
-    ball_detector.show_y_graph(detection_model.player_1_boxes, detection_model.player_2_boxes)
+    # ball_detector.show_y_graph(detection_model.player_1_boxes, detection_model.player_2_boxes)
 
 
 s = time.time()
-video_process(video_path='../videos/vid7.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
+video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
               court=True, top_view=False)
 print(f'Total computation time : {time.time() - s} seconds')

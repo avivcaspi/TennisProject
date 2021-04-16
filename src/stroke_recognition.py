@@ -79,6 +79,32 @@ class ActionRecognition:
         self.softmax = nn.Softmax(dim=1)
         self.strokes_label = ['Forehand', 'Backhand', 'Service/Smash']
 
+    def add_frame(self, frame, player_box):
+        box_center = center_of_box(player_box)
+        patch = frame[int(box_center[1] - self.box_margin): int(box_center[1] + self.box_margin),
+                int(box_center[0] - self.box_margin): int(box_center[0] + self.box_margin)].copy()
+        patch = imutils.resize(patch, 299)
+        frame_t = patch.transpose((2, 0, 1)) / 255
+        frame_tensor = torch.from_numpy(frame_t).type(self.dtype)
+        frame_tensor = self.normalize(frame_tensor).unsqueeze(0)
+        with torch.no_grad():
+            # forward pass
+            features = self.feature_extractor(frame_tensor)
+        features = features.unsqueeze(1)
+        if self.frames_features_seq is None:
+            self.frames_features_seq = features
+        else:
+            self.frames_features_seq = torch.cat([self.frames_features_seq, features], dim=1)
+
+    def predict_saved_seq(self, clear=True):
+        with torch.no_grad():
+            scores = self.LSTM(self.frames_features_seq)[-1].unsqueeze(0)
+            probs = self.softmax(scores).squeeze().cpu().numpy()
+
+        if clear:
+            self.frames_features_seq = None
+        return probs, self.strokes_label[np.argmax(probs)]
+
     def predict_stroke(self, frame, player_1_box):
         box_center = center_of_box(player_1_box)
         patch = frame[int(box_center[1] - self.box_margin): int(box_center[1] + self.box_margin),

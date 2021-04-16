@@ -53,11 +53,9 @@ class DetectionModel:
                 court_type = 1
                 white_ref = court_detector.court_reference.get_court_mask(court_type)
                 white_mask = cv2.warpPerspective(white_ref, court_detector.court_warp_matrix[-1], image.shape[1::-1])
-                if court_type == 2:
-                    white_mask = cv2.dilate(white_mask, np.ones((50, 1)), anchor=(0, 0))
+
                 image_court = image.copy()
                 image_court[white_mask == 0, :] = (0, 0, 0)
-
 
             persons_boxes, _ = self._detect(image_court)
             if len(persons_boxes) > 0:
@@ -74,7 +72,6 @@ class DetectionModel:
             max(xt - margin, 0), max(yt - margin, 0), min(xb + margin, self.v_width), min(yb + margin, self.v_height))
             trimmed_image = image[max(yt - margin, 0): min(yb + margin, self.v_height),
                             max(xt - margin, 0): min(xb + margin, self.v_width), :]
-
 
             persons_boxes, _ = self._detect(trimmed_image, self.PERSON_SECONDARY_SCORE)
             if len(persons_boxes) > 0:
@@ -170,6 +167,8 @@ class DetectionModel:
             missing = start - 1 - len(boxes)
             boxes.extend([[None, None, None, None]] * missing)
             boxes.extend(self.persons_boxes[det][:persons_sections[det][1] - persons_sections[det][0] + 1])
+        missing = len(self.player_1_boxes) - len(boxes)
+        boxes.extend([[None, None, None, None]] * missing)
         self.player_2_boxes = boxes
 
     def _detect(self, image, person_min_score=None):

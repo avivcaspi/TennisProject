@@ -60,6 +60,8 @@ class BallDetector:
         self.threshold_dist = 100
         self.xy_coordinates = np.array([[None, None], [None, None]])
 
+        self.bounces_indices = None
+
     def detect_ball(self, frame):
         if self.video_width is None:
             self.video_width = frame.shape[1]
@@ -81,8 +83,13 @@ class BallDetector:
             self.xy_coordinates = np.append(self.xy_coordinates, np.array([[x, y]]), axis=0)
 
     def mark_positions(self, frame, mark_num=4, frame_num=None, ball_color='yellow'):
+        bounce_i = None
         if frame_num is not None:
             q = self.xy_coordinates[frame_num-mark_num+1:frame_num+1, :]
+            for i in range(frame_num - mark_num + 1, frame_num + 1):
+                if i in self.bounces_indices:
+                    bounce_i = i - frame_num + mark_num - 1
+                    break
         else:
             q = self.xy_coordinates[-mark_num:, :]
         pil_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -93,7 +100,10 @@ class BallDetector:
                 draw_y = q[i, 1]
                 bbox = (draw_x - 2, draw_y - 2, draw_x + 2, draw_y + 2)
                 draw = ImageDraw.Draw(pil_image)
-                draw.ellipse(bbox, outline=ball_color)
+                if bounce_i is not None and i == bounce_i:
+                    draw.ellipse(bbox, outline='red')
+                else:
+                    draw.ellipse(bbox, outline=ball_color)
 
             # Convert PIL image format back to opencv image format
             frame = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)

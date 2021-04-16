@@ -216,10 +216,14 @@ class TrackNetDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        path1, path2, path3, gt_path, x, y = self.df.iloc[idx, :]
+        path1, path2, path3, gt_path, x, y, status = self.df.iloc[idx, :]
         if np.math.isnan(x):
             x = -1
             y = -1
+
+        if np.math.isnan(status):
+            status = -1
+
         vid_frames = getInputArr(path1, path2, path3, self.input_width, self.input_height)
 
         gt_path = gt_path.replace("groundtruth", f"groundtruth_{self.num_classes}")
@@ -228,7 +232,7 @@ class TrackNetDataset(Dataset):
         vid_frames = torch.from_numpy(vid_frames) / 255
         gt = torch.from_numpy(gt)
 
-        sample = {'frames': vid_frames, 'gt': gt, 'gt_path': gt_path, 'x_true': x, 'y_true': y}
+        sample = {'frames': vid_frames, 'gt': gt, 'gt_path': gt_path, 'x_true': x, 'y_true': y, 'status': status}
 
         return sample
 

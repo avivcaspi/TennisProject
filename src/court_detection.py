@@ -261,16 +261,16 @@ class CourtDetector:
                                    [self.left_court_line, self.right_court_line,
                                     self.right_inner_line, self.left_inner_line, self.middle_line])
 
-    def get_extra_parts_location(self):
+    def get_extra_parts_location(self, frame_num=-1):
         parts = np.array(self.court_reference.get_extra_parts(), dtype=np.float32).reshape((-1, 1, 2))
-        parts = cv2.perspectiveTransform(parts, self.court_warp_matrix[-1]).reshape(-1)
+        parts = cv2.perspectiveTransform(parts, self.court_warp_matrix[frame_num]).reshape(-1)
         top_part = parts[:2]
         bottom_part = parts[2:]
         return top_part, bottom_part
 
-    def delete_extra_parts(self, frame):
+    def delete_extra_parts(self, frame, frame_num=-1):
         img = frame.copy()
-        top, bottom = self.get_extra_parts_location()
+        top, bottom = self.get_extra_parts_location(frame_num)
         img[int(bottom[1] - 10):int(bottom[1] + 10), int(bottom[0] - 15):int(bottom[0] + 15), :] = (0, 0, 0)
         img[int(top[1] - 10):int(top[1] + 10), int(top[0] - 15):int(top[0] + 15), :] = (0, 0, 0)
         return img

@@ -9,7 +9,6 @@ import time
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from src.datasets import TrackNetDataset, get_dataloaders
-from src.load_batches import InputOutputGenerator
 from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt
 from torch.optim.adadelta import Adadelta
