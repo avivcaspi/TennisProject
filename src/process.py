@@ -45,29 +45,54 @@ def get_stroke_predictions(video_path, stroke_recognition, strokes_frames, playe
     return predictions
 
 
-def find_strokes_indices(player_boxes, ball_positions, skeleton_df):
-
+def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleton_df):
     ball_x, ball_y = ball_positions[:, 0], ball_positions[:, 1]
     smooth_x = signal.savgol_filter(ball_x, 3, 2)
     smooth_y = signal.savgol_filter(ball_y, 3, 2)
 
+    # Ball position interpolation
     x = np.arange(0, len(smooth_y))
     indices = [i for i, val in enumerate(smooth_y) if np.isnan(val)]
     x = np.delete(x, indices)
     y1 = np.delete(smooth_y, indices)
     y2 = np.delete(smooth_x, indices)
-    f2_y = interp1d(x, y1, kind='cubic', fill_value="extrapolate")
-    f2_x = interp1d(x, y2, kind='cubic', fill_value="extrapolate")
+    ball_f2_y = interp1d(x, y1, kind='cubic', fill_value="extrapolate")
+    ball_f2_x = interp1d(x, y2, kind='cubic', fill_value="extrapolate")
     xnew = np.linspace(0, len(ball_y), num=len(ball_y), endpoint=True)
     plt.plot(np.arange(0, len(smooth_y)), smooth_y, 'o', xnew,
-             f2_y(xnew), '-r')
+             ball_f2_y(xnew), '-r')
     plt.legend(['data', 'inter'], loc='best')
     plt.show()
 
-    coordinates = f2_y(xnew)
+    # Player 2 position interpolation
+    player_2_centers = np.array([center_of_box(box) for box in player_2_boxes])
+    player_2_x, player_2_y = player_2_centers[:, 0], player_2_centers[:, 1]
+    player_2_x = signal.savgol_filter(player_2_x, 3, 2)
+    player_2_y = signal.savgol_filter(player_2_y, 3, 2)
+    x = np.arange(0, len(player_2_y))
+    indices = [i for i, val in enumerate(player_2_y) if np.isnan(val)]
+    x = np.delete(x, indices)
+    y1 = np.delete(player_2_y, indices)
+    y2 = np.delete(player_2_x, indices)
+    player_2_f_y = interp1d(x, y1, fill_value="extrapolate")
+    player_2_f2_y = interp1d(x, y1, kind='cubic', fill_value="extrapolate")
+    player_2_f2_x = interp1d(x, y2, kind='cubic', fill_value="extrapolate")
+    player_2_f_x = interp1d(x, y2, fill_value="extrapolate")
+    xnew = np.linspace(0, len(player_2_y), num=len(player_2_y), endpoint=True)
+    plt.plot(np.arange(0, len(player_2_y)), player_2_y, 'o', xnew,
+             player_2_f2_y(xnew), '-r', xnew, player_2_f_y(xnew), '--g')
+    plt.legend(['data', 'inter_cubic', 'inter_lin'], loc='best')
+    plt.show()
+
+    coordinates = ball_f2_y(xnew)
     peaks, _ = find_peaks(coordinates)
     plt.plot(coordinates)
     plt.plot(peaks, coordinates[peaks], "x")
+    plt.show()
+
+    neg_peaks, _ = find_peaks(coordinates * -1)
+    plt.plot(coordinates)
+    plt.plot(neg_peaks, coordinates[neg_peaks], "x")
     plt.show()
 
     left_wrist_index = 9
@@ -77,13 +102,13 @@ def find_strokes_indices(player_boxes, ball_positions, skeleton_df):
     right_wrist_pos = skeleton_df.iloc[:, [right_wrist_index, right_wrist_index + 15]].values
 
     dists = []
-    for i, player_box in enumerate(player_boxes):
+    for i, player_box in enumerate(player_1_boxes):
         if player_box[0] is not None:
             player_center = center_of_box(player_box)
-            ball_pos = np.array([f2_x(i), f2_y(i)])
+            ball_pos = np.array([ball_f2_x(i), ball_f2_y(i)])
             box_dist = np.linalg.norm(player_center - ball_pos)
             right_wrist_dist, left_wrist_dist = np.inf, np.inf
-            if right_wrist_pos[i,0] > 0:
+            if right_wrist_pos[i, 0] > 0:
                 right_wrist_dist = np.linalg.norm(right_wrist_pos[i, :] - ball_pos)
             if left_wrist_pos[i, 0] > 0:
                 left_wrist_dist = np.linalg.norm(left_wrist_pos[i, :] - ball_pos)
@@ -92,33 +117,58 @@ def find_strokes_indices(player_boxes, ball_positions, skeleton_df):
             dists.append(None)
     dists = np.array(dists)
 
-    strokes_indices = []
+    dists2 = []
+    for i in range(len(player_2_centers)):
+        ball_pos = np.array([ball_f2_x(i), ball_f2_y(i)])
+        box_center = np.array([player_2_f_x(i), player_2_f_y(i)])
+        box_dist = np.linalg.norm(box_center - ball_pos)
+        dists2.append(box_dist)
+    dists2 = np.array(dists2)
+
+    strokes_1_indices = []
     for peak in peaks:
-        player_box_height = max(player_boxes[peak][3] - player_boxes[peak][1], 130)
-        if dists[peak] < (player_box_height * 4/5):
-            strokes_indices.append(peak)
+        player_box_height = max(player_1_boxes[peak][3] - player_1_boxes[peak][1], 130)
+        if dists[peak] < (player_box_height * 4 / 5):
+            strokes_1_indices.append(peak)
+
+    strokes_2_indices = []
+    for peak in neg_peaks:
+        if dists2[peak] < 100:
+            strokes_2_indices.append(peak)
 
     while True:
-        diffs = np.diff(strokes_indices)
+        diffs = np.diff(strokes_1_indices)
         to_del = []
         for i, diff in enumerate(diffs):
             if diff < 40:
-                max_in = np.argmax([dists[strokes_indices[i]], dists[strokes_indices[i+1]]])
+                max_in = np.argmax([dists[strokes_1_indices[i]], dists[strokes_1_indices[i + 1]]])
                 to_del.append(i + max_in)
 
-        strokes_indices = np.delete(strokes_indices, to_del)
+        strokes_1_indices = np.delete(strokes_1_indices, to_del)
         if len(to_del) == 0:
             break
 
-    bounces_indices = [x for x in peaks if x not in strokes_indices]
+    while True:
+        diffs = np.diff(strokes_2_indices)
+        to_del = []
+        for i, diff in enumerate(diffs):
+            if diff < 40:
+                max_in = np.argmax([dists2[strokes_2_indices[i]], dists2[strokes_2_indices[i + 1]]])
+                to_del.append(i + max_in)
+
+        strokes_2_indices = np.delete(strokes_2_indices, to_del)
+        if len(to_del) == 0:
+            break
+
+    bounces_indices = [x for x in peaks if x not in strokes_1_indices]
     plt.figure()
     plt.plot(coordinates)
-    plt.plot(strokes_indices, coordinates[strokes_indices], "or")
-    plt.plot(bounces_indices, coordinates[bounces_indices], "og")
-    plt.legend(['data', 'strokes', 'bounces'], loc='best')
+    plt.plot(strokes_1_indices, coordinates[strokes_1_indices], "or")
+    plt.plot(strokes_2_indices, coordinates[strokes_2_indices], "og")
+    plt.legend(['data', 'player 1 strokes', 'player 2 strokes'], loc='best')
     plt.show()
 
-    return strokes_indices, bounces_indices, f2_x, f2_y
+    return strokes_1_indices, strokes_2_indices, bounces_indices, player_2_f_x, player_2_f_y
 
 
 def mark_player_box(frame, boxes, frame_num):
@@ -154,7 +204,7 @@ def mark_skeleton(skeleton_df, img, img_no_frame, frame_number):
 
 
 def add_data_to_video(input_video, court_detector, players_detector, ball_detector, strokes_predictions, skeleton_df,
-                      show_video, with_frame, output_folder, output_file):
+                      show_video, with_frame, output_folder, output_file, p1, p2, f_x,f_y):
     """
     Creates new videos with pose stickman, face landmarks and blinks counter
     :param input_video: str, path to the input videos
@@ -220,20 +270,31 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
         if skeleton_df is not None:
             img, img_no_frame = mark_skeleton(skeleton_df, img, img_no_frame, frame_number)
 
-        for i in range(-10,10):
+        for i in range(-10, 10):
             if frame_number + i in strokes_predictions.keys():
-                cv2.putText(img, 'STROKE HIT', (200, 200),
-                            cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 255) if i != 0 else (255,0,0), 3)
+                '''cv2.putText(img, 'STROKE HIT', (200, 200),
+                            cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 255) if i != 0 else (255, 0, 0), 3)
 
-                probs, stroke = strokes_predictions[frame_number + i]['probs'], strokes_predictions[frame_number + i]['stroke']
+                probs, stroke = strokes_predictions[frame_number + i]['probs'], strokes_predictions[frame_number + i][
+                    'stroke']
                 cv2.putText(img, 'Forehand - {:.2f}, Backhand - {:.2f}, Service - {:.2f}'.format(*probs),
                             (200, 400),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
                 cv2.putText(img, f'Stroke : {stroke}',
                             (int(player1_boxes[frame_number][0]) - 10, int(player1_boxes[frame_number][1]) - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)'''
 
                 break
+
+        for i in range(-5, 10):
+            if frame_number + i in p1:
+                cv2.putText(img, 'Stroke detected', (int(player1_boxes[frame_number][0]) - 10, int(player1_boxes[frame_number][1]) - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255) if i != 0 else (255, 0, 0), 2)
+
+            if frame_number + i in p2:
+                cv2.putText(img, 'Stroke detected',
+                            (int(f_x(frame_number)) - 30, int(f_y(frame_number)) - 50),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255) if i != 0 else (255, 0, 0), 2)
 
         # display frame
         if show_video:
@@ -400,22 +461,24 @@ def video_process(video_path, show_video=False, include_video=True,
         df_smooth = smoother.smooth(df)
         smoother.save_to_csv(output_folder)
 
-    player_1_strokes_indices, bounces_indices, f2_x, f2_y = find_strokes_indices(detection_model.player_1_boxes,
-                                                    ball_detector.xy_coordinates, df_smooth)
+    player_1_strokes_indices, player_2_strokes_indices, bounces_indices, f2_x, f2_y = find_strokes_indices(detection_model.player_1_boxes,
+                                                                                 detection_model.player_2_boxes,
+                                                                                 ball_detector.xy_coordinates,
+                                                                                 df_smooth)
 
-    ball_detector.bounces_indices = bounces_indices
-    ball_detector.coordinates = (f2_x, f2_y)
+    '''ball_detector.bounces_indices = bounces_indices
+    ball_detector.coordinates = (f2_x, f2_y)'''
     predictions = get_stroke_predictions(video_path, stroke_recognition,
                                          player_1_strokes_indices, detection_model.player_1_boxes)
 
     add_data_to_video(input_video=video_path, court_detector=court_detector, players_detector=detection_model,
                       ball_detector=ball_detector, strokes_predictions=predictions, skeleton_df=df_smooth,
-                      show_video=show_video, with_frame=1, output_folder=output_folder, output_file=output_file)
+                      show_video=show_video, with_frame=1, output_folder=output_folder, output_file=output_file, p1=player_1_strokes_indices, p2=player_2_strokes_indices, f_x = f2_x, f_y=f2_y)
 
     # ball_detector.show_y_graph(detection_model.player_1_boxes, detection_model.player_2_boxes)
 
 
 s = time.time()
-video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
+video_process(video_path='../videos/vid7.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
               court=True, top_view=False)
 print(f'Total computation time : {time.time() - s} seconds')

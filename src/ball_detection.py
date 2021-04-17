@@ -60,7 +60,7 @@ class BallDetector:
         self.threshold_dist = 100
         self.xy_coordinates = np.array([[None, None], [None, None]])
 
-        self.bounces_indices = None
+        self.bounces_indices = []
 
     def detect_ball(self, frame):
         if self.video_width is None:
