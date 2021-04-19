@@ -11,6 +11,7 @@ from detection import DetectionModel, center_of_box
 from pose import PoseExtractor
 from smooth import Smooth
 from src.ball_detection import BallDetector
+from src.statistics import Statistics
 from src.stroke_recognition import ActionRecognition
 from utils import get_video_properties, get_dtype, get_stickman_line_connection
 from court_detection import CourtDetector
@@ -75,12 +76,10 @@ def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleto
     y1 = np.delete(player_2_y, indices)
     y2 = np.delete(player_2_x, indices)
     player_2_f_y = interp1d(x, y1, fill_value="extrapolate")
-    player_2_f2_y = interp1d(x, y1, kind='cubic', fill_value="extrapolate")
-    player_2_f2_x = interp1d(x, y2, kind='cubic', fill_value="extrapolate")
+
     player_2_f_x = interp1d(x, y2, fill_value="extrapolate")
     xnew = np.linspace(0, len(player_2_y), num=len(player_2_y), endpoint=True)
-    plt.plot(np.arange(0, len(player_2_y)), player_2_y, 'o', xnew,
-             player_2_f2_y(xnew), '-r', xnew, player_2_f_y(xnew), '--g')
+    plt.plot(np.arange(0, len(player_2_y)), player_2_y, 'o', xnew, player_2_f_y(xnew), '--g')
     plt.legend(['data', 'inter_cubic', 'inter_lin'], loc='best')
     plt.show()
 
@@ -318,44 +317,14 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
     cv2.destroyAllWindows()
 
 
-def create_top_view(court_detector, player_1_boxes, player_2_boxes):
+def create_top_view(court_detector, detection_model):
     court = court_detector.court_reference.court.copy()
     court = cv2.line(court, *court_detector.court_reference.net, 255, 5)
-    inv_mat = court_detector.game_warp_matrix
     v_width, v_height = court.shape[::-1]
     court = cv2.cvtColor(court, cv2.COLOR_GRAY2BGR)
     out = cv2.VideoWriter('output/top_view.avi',
                           cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), 30, (v_width, v_height))
-    positions_1 = []
-    positions_2 = []
-    for i, box in enumerate(player_1_boxes):
-        feet_pos = np.array([(box[0] + (box[2] - box[0]) / 2).item(), box[3].item()]).reshape((1, 1, 2))
-        feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mat[i]).reshape(-1)
-        positions_1.append(feet_court_pos)
-    mask = []
-    for i, box in enumerate(player_2_boxes):
-        if box[0] is not None:
-            feet_pos = np.array([(box[0] + (box[2] - box[0]) / 2), box[3]]).reshape((1, 1, 2))
-            feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mat[i]).reshape(-1)
-            positions_2.append(feet_court_pos)
-            mask.append(True)
-        elif len(positions_2) > 0:
-            positions_2.append(positions_2[-1])
-            mask.append(False)
-        else:
-            positions_2.append(np.array([0, 0]))
-            mask.append(False)
-
-    positions_1 = np.array(positions_1)
-    smoothed_1 = np.zeros_like(positions_1)
-    smoothed_1[:, 0] = signal.savgol_filter(positions_1[:, 0], 7, 2)
-    smoothed_1[:, 1] = signal.savgol_filter(positions_1[:, 1], 7, 2)
-    positions_2 = np.array(positions_2)
-    smoothed_2 = np.zeros_like(positions_2)
-    smoothed_2[:, 0] = signal.savgol_filter(positions_2[:, 0], 7, 2)
-    smoothed_2[:, 1] = signal.savgol_filter(positions_2[:, 1], 7, 2)
-
-    smoothed_2[not mask, :] = [None, None]
+    smoothed_1, smoothed_2 = detection_model.calculate_feet_positions(court_detector)
 
     for feet_pos_1, feet_pos_2 in zip(smoothed_1, smoothed_2):
         frame = court.copy()
@@ -424,14 +393,16 @@ def video_process(video_path, show_video=False, include_video=True,
 
             # detect
             detection_model.detect_player_1(frame.copy(), court_detector)
-            detection_model.detect_top_persons(frame, court_detector, frame_i)
+            boxes = detection_model.detect_top_persons(frame, court_detector, frame_i)
 
             # Create stick man figure (pose detection)
             if stickman:
                 pose_extractor.extract_pose(frame, detection_model.player_1_boxes)
 
             ball_detector.detect_ball(court_detector.delete_extra_parts(frame))
-
+            frame[boxes > 0] = 0
+            cv2.imshow('df', frame+boxes)
+            cv2.waitKey(1)
             total_time += (time.time() - start_time)
             print('Processing frame %d/%d  FPS %04f' % (frame_i, length, frame_i / total_time), '\r', end='')
             if not frame_i % 100:
@@ -446,7 +417,7 @@ def video_process(video_path, show_video=False, include_video=True,
     detection_model.find_player_2_box()
 
     if top_view:
-        create_top_view(court_detector, detection_model.player_1_boxes, detection_model.player_2_boxes)
+        create_top_view(court_detector, detection_model)
 
     # Save landmarks in csv files
     df = None
@@ -471,6 +442,10 @@ def video_process(video_path, show_video=False, include_video=True,
     predictions = get_stroke_predictions(video_path, stroke_recognition,
                                          player_1_strokes_indices, detection_model.player_1_boxes)
 
+    statistics = Statistics(court_detector, detection_model)
+    heatmap = statistics.get_player_position_heatmap()
+    statistics.display_heatmap(heatmap, court_detector.court_reference.court)
+
     add_data_to_video(input_video=video_path, court_detector=court_detector, players_detector=detection_model,
                       ball_detector=ball_detector, strokes_predictions=predictions, skeleton_df=df_smooth,
                       show_video=show_video, with_frame=1, output_folder=output_folder, output_file=output_file, p1=player_1_strokes_indices, p2=player_2_strokes_indices, f_x = f2_x, f_y=f2_y)
@@ -478,7 +453,12 @@ def video_process(video_path, show_video=False, include_video=True,
     # ball_detector.show_y_graph(detection_model.player_1_boxes, detection_model.player_2_boxes)
 
 
-s = time.time()
-video_process(video_path='../videos/vid7.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
-              court=True, top_view=False)
-print(f'Total computation time : {time.time() - s} seconds')
+def main():
+    s = time.time()
+    video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
+                  court=True, top_view=False)
+    print(f'Total computation time : {time.time() - s} seconds')
+
+
+if __name__ == "__main__":
+    main()

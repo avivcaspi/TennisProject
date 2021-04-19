@@ -372,7 +372,7 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
                 acc, non_zero_acc, non_zero = accuracy(outputs.argmax(dim=1).detach().cpu().numpy(),
                                                        labels.cpu().numpy())
 
-                if i % 2 == 1:
+                if i % 1 == 0:
                     dists, success, fail = get_center_ball_dist(outputs.argmax(dim=1).detach().cpu().numpy(), x_true,
                                                                 y_true,
                                                                 num_classes=num_classes)
@@ -416,12 +416,12 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
                         valid_acc.append(running_no_zero_acc / (i + 1))
                         valid_success_epochs.append(total_success)
                         valid_fail_epochs.append(total_fail)
-                        lr_scheduler.step(valid_losses[-1])
+                        # lr_scheduler.step(valid_losses[-1])
                     break
 
         total_epochs += 1
         print('Last Epoch time : {:.4f} min'.format((time.time() - start_time) / 60))
-        if epoch % 15 == 14:
+        if epoch % 50 == 49:
             inputs, labels = data['frames'], data['gt']
             inputs = inputs.to(device)
             labels = labels.to(device)
@@ -446,6 +446,10 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
     print('Finished Training')
     plot_graph(train_losses, valid_losses, 'loss', f'../report/tracknet_losses_{total_epochs}_epochs.png')
     plot_graph(train_acc, valid_acc, 'acc', f'../report/tracknet_acc_{total_epochs}_epochs.png')
+    plot_graph(
+        np.array(train_success_epochs) * 100 / (np.array(train_success_epochs) + np.array(train_fail_epochs)),
+        np.array(valid_success_epochs) * 100 / (np.array(valid_success_epochs) + np.array(valid_fail_epochs)),
+        'success acc', f'../report/tracknet_success_acc_{total_epochs}_epochs.png')
 
 
 if __name__ == "__main__":
@@ -456,10 +460,10 @@ if __name__ == "__main__":
                np.array(state['valid_success']) * 100 / (np.array(state['valid_success']) + np.array(state['valid_fail'])), 'success acc', '../report/tracknet_success_acc_150_epochs_256.png')
     '''
     start = time.time()
-    for lr in [1.0]:
+    for lr in [0.05]:
         s = time.time()
         print(f'Start training with LR = {lr}')
-        train('saved states/tracknet_weights_lr_1.0_epochs_120.pth', epochs_num=50, lr=lr, num_classes=256,
-              batch_size=1)
+        train("saved states/tracknet_weights_lr_1.0_epochs_250.pth",epochs_num=300, lr=lr, num_classes=2,
+              batch_size=2)
         print(f'End training with LR = {lr}, Time = {time.time() - s}')
     print(f'Finished all runs, Time = {time.time() - start}')

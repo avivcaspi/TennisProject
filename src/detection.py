@@ -5,6 +5,7 @@ import torch
 import torchvision
 import numpy as np
 import pandas as pd
+from scipy import signal
 
 from src.court_detection import CourtDetector
 from src.sort import Sort
@@ -40,7 +41,7 @@ class DetectionModel:
         self.current_frame = None
         self.next_frame = None
         self.movement_threshold = 200
-        self.mot_tracker = Sort(max_age=10, min_hits=3, iou_threshold=0.05)
+        self.mot_tracker = Sort(max_age=7, min_hits=3, iou_threshold=0.05)
 
     def detect_player_1(self, image, court_detector):
         boxes = np.zeros_like(image)
@@ -162,6 +163,7 @@ class DetectionModel:
                     if key in dists.keys():
                         dists.pop(key)
         detections = sorted(detections)
+
         for det in detections:
             start = self.persons_first_appearance[det]
             missing = start - 1 - len(boxes)
@@ -193,6 +195,40 @@ class DetectionModel:
                 persons_boxes.append(box.detach().cpu().numpy())
                 probs.append(score.detach().cpu().numpy())
         return persons_boxes, probs
+
+    def calculate_feet_positions(self, court_detector):
+        inv_mats = court_detector.game_warp_matrix
+        positions_1 = []
+        positions_2 = []
+        for i, box in enumerate(self.player_1_boxes):
+            feet_pos = np.array([(box[0] + (box[2] - box[0]) / 2).item(), box[3].item()]).reshape((1, 1, 2))
+            feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mats[i]).reshape(-1)
+            positions_1.append(feet_court_pos)
+        mask = []
+        for i, box in enumerate(self.player_2_boxes):
+            if box[0] is not None:
+                feet_pos = np.array([(box[0] + (box[2] - box[0]) / 2), box[3]]).reshape((1, 1, 2))
+                feet_court_pos = cv2.perspectiveTransform(feet_pos, inv_mats[i]).reshape(-1)
+                positions_2.append(feet_court_pos)
+                mask.append(True)
+            elif len(positions_2) > 0:
+                positions_2.append(positions_2[-1])
+                mask.append(False)
+            else:
+                positions_2.append(np.array([0, 0]))
+                mask.append(False)
+
+        positions_1 = np.array(positions_1)
+        smoothed_1 = np.zeros_like(positions_1)
+        smoothed_1[:, 0] = signal.savgol_filter(positions_1[:, 0], 7, 2)
+        smoothed_1[:, 1] = signal.savgol_filter(positions_1[:, 1], 7, 2)
+        positions_2 = np.array(positions_2)
+        smoothed_2 = np.zeros_like(positions_2)
+        smoothed_2[:, 0] = signal.savgol_filter(positions_2[:, 0], 7, 2)
+        smoothed_2[:, 1] = signal.savgol_filter(positions_2[:, 1], 7, 2)
+
+        smoothed_2[not mask, :] = [None, None]
+        return smoothed_1, smoothed_2
 
 
 def center_of_box(box):
