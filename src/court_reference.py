@@ -5,18 +5,18 @@ import matplotlib.pyplot as plt
 
 class CourtReference:
     def __init__(self):
-        self.baseline_top = ((276, 551), (1369, 551))
-        self.baseline_bottom = ((276, 2925), (1369, 2925))
-        self.net = ((276, 1748), (1369, 1748))
-        self.left_court_line = ((276, 551), (276, 2925))
-        self.right_court_line = ((1369, 551), (1369, 2925))
-        self.left_inner_line = ((413, 551), (413, 2925))
-        self.right_inner_line = ((1232, 551), (1232, 2925))
-        self.middle_line = ((822, 1100), (822, 2376))
-        self.top_inner_line = ((413, 1100), (1232, 1100))
-        self.bottom_inner_line = ((413, 2376), (1232, 2376))
-        self.top_extra_part = (822.5, 570)
-        self.bottom_extra_part = (822.5, 2900)
+        self.baseline_top = ((286, 561), (1379, 561))
+        self.baseline_bottom = ((286, 2935), (1379, 2935))
+        self.net = ((286, 1748), (1379, 1748))
+        self.left_court_line = ((286, 561), (286, 2935))
+        self.right_court_line = ((1379, 561), (1379, 2935))
+        self.left_inner_line = ((423, 561), (423, 2935))
+        self.right_inner_line = ((1242, 561), (1242, 2935))
+        self.middle_line = ((832, 1110), (832, 2386))
+        self.top_inner_line = ((423, 1110), (1242, 1110))
+        self.bottom_inner_line = ((423, 2386), (1242, 2386))
+        self.top_extra_part = (832.5, 580)
+        self.bottom_extra_part = (832.5, 2910)
 
         self.court_conf = {1: [*self.baseline_top, *self.baseline_bottom],
                            2: [self.left_inner_line[0], self.right_inner_line[0], self.left_inner_line[1],
@@ -38,8 +38,8 @@ class CourtReference:
                                 self.bottom_inner_line[1]],
                            12: [*self.bottom_inner_line, self.left_inner_line[1], self.right_inner_line[1]]}
         self.line_width = 1
-        self.court_width = 1097
-        self.court_height = 2378
+        self.court_width = 1117
+        self.court_height = 2408
         self.top_bottom_border = 549
         self.right_left_border = 274
         self.court_total_width = self.court_width + self.right_left_border * 2

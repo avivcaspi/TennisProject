@@ -41,7 +41,7 @@ class DetectionModel:
         self.current_frame = None
         self.next_frame = None
         self.movement_threshold = 200
-        self.mot_tracker = Sort(max_age=7, min_hits=3, iou_threshold=0.05)
+        self.mot_tracker = Sort(max_age=10, min_hits=3, iou_threshold=0.05)
 
     def detect_player_1(self, image, court_detector):
         boxes = np.zeros_like(image)

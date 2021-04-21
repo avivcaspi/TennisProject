@@ -46,7 +46,7 @@ def get_stroke_predictions(video_path, stroke_recognition, strokes_frames, playe
     return predictions
 
 
-def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleton_df):
+def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleton_df, verbose=0):
     ball_x, ball_y = ball_positions[:, 0], ball_positions[:, 1]
     smooth_x = signal.savgol_filter(ball_x, 3, 2)
     smooth_y = signal.savgol_filter(ball_y, 3, 2)
@@ -60,10 +60,12 @@ def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleto
     ball_f2_y = interp1d(x, y1, kind='cubic', fill_value="extrapolate")
     ball_f2_x = interp1d(x, y2, kind='cubic', fill_value="extrapolate")
     xnew = np.linspace(0, len(ball_y), num=len(ball_y), endpoint=True)
-    plt.plot(np.arange(0, len(smooth_y)), smooth_y, 'o', xnew,
-             ball_f2_y(xnew), '-r')
-    plt.legend(['data', 'inter'], loc='best')
-    plt.show()
+
+    if verbose:
+        plt.plot(np.arange(0, len(smooth_y)), smooth_y, 'o', xnew,
+                 ball_f2_y(xnew), '-r')
+        plt.legend(['data', 'inter'], loc='best')
+        plt.show()
 
     # Player 2 position interpolation
     player_2_centers = np.array([center_of_box(box) for box in player_2_boxes])
@@ -79,20 +81,24 @@ def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleto
 
     player_2_f_x = interp1d(x, y2, fill_value="extrapolate")
     xnew = np.linspace(0, len(player_2_y), num=len(player_2_y), endpoint=True)
-    plt.plot(np.arange(0, len(player_2_y)), player_2_y, 'o', xnew, player_2_f_y(xnew), '--g')
-    plt.legend(['data', 'inter_cubic', 'inter_lin'], loc='best')
-    plt.show()
+
+    if verbose:
+        plt.plot(np.arange(0, len(player_2_y)), player_2_y, 'o', xnew, player_2_f_y(xnew), '--g')
+        plt.legend(['data', 'inter_cubic', 'inter_lin'], loc='best')
+        plt.show()
 
     coordinates = ball_f2_y(xnew)
     peaks, _ = find_peaks(coordinates)
-    plt.plot(coordinates)
-    plt.plot(peaks, coordinates[peaks], "x")
-    plt.show()
+    if verbose:
+        plt.plot(coordinates)
+        plt.plot(peaks, coordinates[peaks], "x")
+        plt.show()
 
     neg_peaks, _ = find_peaks(coordinates * -1)
-    plt.plot(coordinates)
-    plt.plot(neg_peaks, coordinates[neg_peaks], "x")
-    plt.show()
+    if verbose:
+        plt.plot(coordinates)
+        plt.plot(neg_peaks, coordinates[neg_peaks], "x")
+        plt.show()
 
     left_wrist_index = 9
     right_wrist_index = 10
@@ -160,12 +166,13 @@ def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleto
             break
 
     bounces_indices = [x for x in peaks if x not in strokes_1_indices]
-    plt.figure()
-    plt.plot(coordinates)
-    plt.plot(strokes_1_indices, coordinates[strokes_1_indices], "or")
-    plt.plot(strokes_2_indices, coordinates[strokes_2_indices], "og")
-    plt.legend(['data', 'player 1 strokes', 'player 2 strokes'], loc='best')
-    plt.show()
+    if verbose:
+        plt.figure()
+        plt.plot(coordinates)
+        plt.plot(strokes_1_indices, coordinates[strokes_1_indices], "or")
+        plt.plot(strokes_2_indices, coordinates[strokes_2_indices], "og")
+        plt.legend(['data', 'player 1 strokes', 'player 2 strokes'], loc='best')
+        plt.show()
 
     return strokes_1_indices, strokes_2_indices, bounces_indices, player_2_f_x, player_2_f_y
 
@@ -393,16 +400,16 @@ def video_process(video_path, show_video=False, include_video=True,
 
             # detect
             detection_model.detect_player_1(frame.copy(), court_detector)
-            boxes = detection_model.detect_top_persons(frame, court_detector, frame_i)
+            detection_model.detect_top_persons(frame, court_detector, frame_i)
 
             # Create stick man figure (pose detection)
             if stickman:
                 pose_extractor.extract_pose(frame, detection_model.player_1_boxes)
 
             ball_detector.detect_ball(court_detector.delete_extra_parts(frame))
-            frame[boxes > 0] = 0
+            '''frame[boxes > 0] = 0
             cv2.imshow('df', frame+boxes)
-            cv2.waitKey(1)
+            cv2.waitKey(1)'''
             total_time += (time.time() - start_time)
             print('Processing frame %d/%d  FPS %04f' % (frame_i, length, frame_i / total_time), '\r', end='')
             if not frame_i % 100:
@@ -455,7 +462,7 @@ def video_process(video_path, show_video=False, include_video=True,
 
 def main():
     s = time.time()
-    video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
+    video_process(video_path='../videos/vid2.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
                   court=True, top_view=False)
     print(f'Total computation time : {time.time() - s} seconds')
 
