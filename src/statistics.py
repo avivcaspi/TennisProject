@@ -12,25 +12,27 @@ class Statistics:
     def __init__(self, court_tracker: CourtDetector, players_detection: DetectionModel):
         self.court_tracker = court_tracker
         self.players_detection = players_detection
+        self.feet_bottom, self.feet_top = self.players_detection.calculate_feet_positions(self.court_tracker)
+        self.top_dists_array = None
+        self.bottom_dists_array = None
 
     def get_player_position_heatmap(self, pit_size=80):
-        feet_bottom, feet_top = self.players_detection.calculate_feet_positions(self.court_tracker)
         court_width = self.court_tracker.court_reference.court_total_width
         court_height = self.court_tracker.court_reference.court_total_height
-
-        heatmap = np.zeros((court_height // pit_size, court_width // pit_size))
-        for x, y in feet_bottom:
+        heatmap_shape = (court_height // pit_size, court_width // pit_size)
+        heatmap = np.zeros(heatmap_shape)
+        for x, y in self.feet_bottom:
             x = int(x)
             y = int(y)
-            heatmap[y // pit_size, x // pit_size] += 1
-        for x, y in feet_top:
+            heatmap[min(heatmap_shape[0] - 1,y // pit_size), min(heatmap_shape[1] - 1,x // pit_size)] += 1
+        for x, y in self.feet_top:
             x = int(x)
             y = int(y)
-            heatmap[y // pit_size, x // pit_size] += 1
+            heatmap[min(heatmap_shape[0] - 1,y // pit_size), min(heatmap_shape[1] - 1,x // pit_size)] += 1
 
         return heatmap
 
-    def display_heatmap(self, heatmap, image=None):
+    def display_heatmap(self, heatmap, image=None, cmap=plt.cm.bwr, title=''):
         if image is not None:
             h, w = image.shape
 
@@ -49,14 +51,42 @@ class Statistics:
         if image is not None:
             im2 = ax.imshow(image, cmap='gray')
             pass
-        im = ax.imshow(heatmap, alpha=0.5, cmap=plt.cm.bwr)
-
+        im = ax.imshow(heatmap, alpha=0.5, cmap=cmap)
+        plt.title(title)
         # Add the color scale bar on the right
         # plt.colorbar(im)
         # Add title
 
         # show
         plt.show()
+
+    def get_players_dists(self):
+        top_dist, top_dists_array = calculate_feet_dist(self.feet_top)
+        bottom_dist, bottom_dists_array = calculate_feet_dist(self.feet_bottom)
+        heatmap = self.get_player_position_heatmap(pit_size=10)
+        heatmap[heatmap > 0] = 255
+        heatmap = cv2.cvtColor(np.uint8(heatmap), cv2.COLOR_GRAY2BGR)
+        heatmap[:, :, 1:] = 0
+
+        self.display_heatmap(heatmap, self.court_tracker.court_reference.court, cmap=None, title='Players path')
+        print('Top player distance is: {:.2f} m'.format(top_dist / 100))
+        print('Bottom player distance is: {:.2f} m'.format(bottom_dist / 100))
+
+        self.top_dists_array = top_dists_array
+        self.bottom_dists_array = bottom_dists_array
+        return top_dist, bottom_dist
+
+
+def calculate_feet_dist(feet_positions, resolution=50):
+    feet_positions = feet_positions // resolution
+    feet_positions *= resolution
+    total_dist = 0
+    dists_array = [0]
+    for pos1, pos2 in zip(feet_positions, feet_positions[1:]):
+        dist = np.linalg.norm(pos1 - pos2)
+        total_dist += dist
+        dists_array.append(total_dist)
+    return total_dist, dists_array
 
 
 if __name__ == "__main__":

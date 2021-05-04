@@ -210,7 +210,8 @@ def mark_skeleton(skeleton_df, img, img_no_frame, frame_number):
 
 
 def add_data_to_video(input_video, court_detector, players_detector, ball_detector, strokes_predictions, skeleton_df,
-                      show_video, with_frame, output_folder, output_file, p1, p2, f_x,f_y):
+                      statistics,
+                      show_video, with_frame, output_folder, output_file, p1, p2, f_x, f_y):
     """
     Creates new videos with pose stickman, face landmarks and blinks counter
     :param input_video: str, path to the input videos
@@ -226,6 +227,9 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
 
     player1_boxes = players_detector.player_1_boxes
     player2_boxes = players_detector.player_2_boxes
+
+    player1_dists = statistics.bottom_dists_array
+    player2_dists = statistics.top_dists_array
 
     if skeleton_df is not None:
         skeleton_df = skeleton_df.fillna(-1)
@@ -279,20 +283,20 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
         for i in range(-10, 10):
             if frame_number + i in strokes_predictions.keys():
                 '''cv2.putText(img, 'STROKE HIT', (200, 200),
-                            cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 255) if i != 0 else (255, 0, 0), 3)
+                            cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 255) if i != 0 else (255, 0, 0), 3)'''
 
                 probs, stroke = strokes_predictions[frame_number + i]['probs'], strokes_predictions[frame_number + i][
                     'stroke']
                 cv2.putText(img, 'Forehand - {:.2f}, Backhand - {:.2f}, Service - {:.2f}'.format(*probs),
-                            (200, 400),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
+                            (70, 400),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
                 cv2.putText(img, f'Stroke : {stroke}',
                             (int(player1_boxes[frame_number][0]) - 10, int(player1_boxes[frame_number][1]) - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)'''
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
 
                 break
 
-        for i in range(-5, 10):
+        '''for i in range(-5, 10):
             if frame_number + i in p1:
                 cv2.putText(img, 'Stroke detected', (int(player1_boxes[frame_number][0]) - 10, int(player1_boxes[frame_number][1]) - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255) if i != 0 else (255, 0, 0), 2)
@@ -300,7 +304,14 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
             if frame_number + i in p2:
                 cv2.putText(img, 'Stroke detected',
                             (int(f_x(frame_number)) - 30, int(f_y(frame_number)) - 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255) if i != 0 else (255, 0, 0), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255) if i != 0 else (255, 0, 0), 2)'''
+
+        cv2.putText(img, 'Distance: {:.2f} m'.format(player1_dists[frame_number] / 100),
+                    (50, 500),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+        cv2.putText(img, 'Distance: {:.2f} m'.format(player2_dists[frame_number] / 100),
+                    (100, 100),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
         # display frame
         if show_video:
@@ -439,10 +450,11 @@ def video_process(video_path, show_video=False, include_video=True,
         df_smooth = smoother.smooth(df)
         smoother.save_to_csv(output_folder)
 
-    player_1_strokes_indices, player_2_strokes_indices, bounces_indices, f2_x, f2_y = find_strokes_indices(detection_model.player_1_boxes,
-                                                                                 detection_model.player_2_boxes,
-                                                                                 ball_detector.xy_coordinates,
-                                                                                 df_smooth)
+    player_1_strokes_indices, player_2_strokes_indices, bounces_indices, f2_x, f2_y = find_strokes_indices(
+        detection_model.player_1_boxes,
+        detection_model.player_2_boxes,
+        ball_detector.xy_coordinates,
+        df_smooth)
 
     '''ball_detector.bounces_indices = bounces_indices
     ball_detector.coordinates = (f2_x, f2_y)'''
@@ -451,19 +463,22 @@ def video_process(video_path, show_video=False, include_video=True,
 
     statistics = Statistics(court_detector, detection_model)
     heatmap = statistics.get_player_position_heatmap()
-    statistics.display_heatmap(heatmap, court_detector.court_reference.court)
+    statistics.display_heatmap(heatmap, court_detector.court_reference.court, title='Heatmap')
+    statistics.get_players_dists()
 
     add_data_to_video(input_video=video_path, court_detector=court_detector, players_detector=detection_model,
                       ball_detector=ball_detector, strokes_predictions=predictions, skeleton_df=df_smooth,
-                      show_video=show_video, with_frame=1, output_folder=output_folder, output_file=output_file, p1=player_1_strokes_indices, p2=player_2_strokes_indices, f_x = f2_x, f_y=f2_y)
+                      statistics=statistics,
+                      show_video=show_video, with_frame=1, output_folder=output_folder, output_file=output_file,
+                      p1=player_1_strokes_indices, p2=player_2_strokes_indices, f_x=f2_x, f_y=f2_y)
 
     # ball_detector.show_y_graph(detection_model.player_1_boxes, detection_model.player_2_boxes)
 
 
 def main():
     s = time.time()
-    video_process(video_path='../videos/vid2.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
-                  court=True, top_view=False)
+    video_process(video_path='../videos/vid4.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
+                  court=True, top_view=True)
     print(f'Total computation time : {time.time() - s} seconds')
 
 

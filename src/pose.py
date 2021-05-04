@@ -18,7 +18,6 @@ class PoseExtractor:
         self.pose_model.type(dtype)  # Also moves model to GPU if available
         self.pose_model.eval()
         self.dtype = dtype
-        # TODO change number of persons detected
         self.person_num = person_num
         self.box = box
         self.PERSON_LABEL = 1

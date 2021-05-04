@@ -41,7 +41,7 @@ class Trainer:
 
         # Extras
         self.softmax = nn.Softmax(dim=1)
-        self.saved_state_name = f'saved_state_strokes_{lr}_{reg}'
+        self.saved_state_name = f'saved_state_strokes_{lr}_{reg}_'
         print(f'Learning rate = {lr}')
 
     def train(self, epochs=1):
@@ -74,7 +74,9 @@ class Trainer:
                 # iterate over data
                 for sample_batched in dataloader:
                     x = sample_batched['features'].type(self.dtype)
-                    y = sample_batched['gt'].type(self.dtype).squeeze()
+                    y = sample_batched['gt'].type(self.dtype)
+                    if len(y.size()) == 2:
+                        y = y.squeeze()
                     step += 1
 
                     # forward pass
@@ -126,6 +128,14 @@ class Trainer:
 
                 if phase == 'valid':
                     self.lr_scheduler.step(epoch_loss)
+                    if epoch % 2 == 1:
+                        saved_state = dict(model_state=self.model.state_dict(), train_loss=train_loss,
+                                           train_acc=train_acc,
+                                           valid_loss=valid_loss, valid_acc=valid_acc)
+                        torch.save(saved_state, 'saved states/' + self.saved_state_name + '_epoch_' + str(epoch))
+                        print(f'*** Saved checkpoint ***')
+
+
 
         time_elapsed = time.time() - start
         print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
@@ -206,7 +216,7 @@ def train_strokes():
     valid_dl = DataLoader(valid_ds, batch_size=batch_size, shuffle=True)
     print(f'train set size is : {len(train_ds)}')
     print(f'validation set size is : {len(valid_ds)}')
-    for lr, reg in zip([0.0001],[0.003]):
+    for lr, reg in zip([0.00004],[0]):
         model = LSTM_model(3, dtype=dtype)
         model.type(dtype)
         trainer = Trainer(model, train_dl, valid_dl, lr=lr, reg=reg)

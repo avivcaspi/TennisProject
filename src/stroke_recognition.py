@@ -49,7 +49,9 @@ class LSTM_model(nn.Module):
         # x shape is (batch_size, seq_len, input_size)
         h0, c0 = self.init_state(x.size(0))
         output, (hn, cn) = self.LSTM(x, (h0, c0))
-        size = x.size(1) // 2
+        #size = 1
+        size = x.size(1) // 4
+
         output = output[:, -size:, :]
         scores = self.fc(output.squeeze(0))
         # scores shape is (batch_size, num_classes)
