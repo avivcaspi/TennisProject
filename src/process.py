@@ -19,17 +19,21 @@ import matplotlib.pyplot as plt
 
 
 def get_stroke_predictions(video_path, stroke_recognition, strokes_frames, player_boxes):
+    """
+    Get the stroke prediction for all sections where we detected a stroke
+    """
     predictions = {}
     cap = cv2.VideoCapture(video_path)
     fps, length, width, height = get_video_properties(cap)
     video_length = 2
+    # For each stroke detected trim video part and predict stroke
     for frame_num in strokes_frames:
+        # Trim the video (only relevant frames are taken)
         starting_frame = max(0, frame_num - int(video_length * fps * 2 / 3))
         cap.set(1, starting_frame)
         i = 0
 
         while True:
-
             ret, frame = cap.read()
 
             if not ret:
@@ -39,7 +43,7 @@ def get_stroke_predictions(video_path, stroke_recognition, strokes_frames, playe
             i += 1
             if i == int(video_length * fps):
                 break
-
+        # predict the stroke
         probs, stroke = stroke_recognition.predict_saved_seq()
         predictions[frame_num] = {'probs': probs, 'stroke': stroke}
     cap.release()
@@ -47,6 +51,9 @@ def get_stroke_predictions(video_path, stroke_recognition, strokes_frames, playe
 
 
 def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleton_df, verbose=0):
+    """
+    Detect strokes frames using location of the ball and players
+    """
     ball_x, ball_y = ball_positions[:, 0], ball_positions[:, 1]
     smooth_x = signal.savgol_filter(ball_x, 3, 2)
     smooth_y = signal.savgol_filter(ball_y, 3, 2)
@@ -88,6 +95,7 @@ def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleto
         plt.show()
 
     coordinates = ball_f2_y(xnew)
+    # Find all peaks of the ball y index
     peaks, _ = find_peaks(coordinates)
     if verbose:
         plt.plot(coordinates)
@@ -100,6 +108,7 @@ def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleto
         plt.plot(neg_peaks, coordinates[neg_peaks], "x")
         plt.show()
 
+    # Get bottom player wrists positions
     left_wrist_index = 9
     right_wrist_index = 10
     skeleton_df = skeleton_df.fillna(-1)
@@ -107,6 +116,7 @@ def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleto
     right_wrist_pos = skeleton_df.iloc[:, [right_wrist_index, right_wrist_index + 15]].values
 
     dists = []
+    # Calculate dist between ball and bottom player
     for i, player_box in enumerate(player_1_boxes):
         if player_box[0] is not None:
             player_center = center_of_box(player_box)
@@ -123,6 +133,7 @@ def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleto
     dists = np.array(dists)
 
     dists2 = []
+    # Calculate dist between ball and top player
     for i in range(len(player_2_centers)):
         ball_pos = np.array([ball_f2_x(i), ball_f2_y(i)])
         box_center = np.array([player_2_f_x(i), player_2_f_y(i)])
@@ -131,16 +142,19 @@ def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleto
     dists2 = np.array(dists2)
 
     strokes_1_indices = []
+    # Find stroke for bottom player by thresholding the dists
     for peak in peaks:
         player_box_height = max(player_1_boxes[peak][3] - player_1_boxes[peak][1], 130)
         if dists[peak] < (player_box_height * 4 / 5):
             strokes_1_indices.append(peak)
 
     strokes_2_indices = []
+    # Find stroke for top player by thresholding the dists
     for peak in neg_peaks:
         if dists2[peak] < 100:
             strokes_2_indices.append(peak)
 
+    # Assert the diff between to consecutive strokes is below some threshold
     while True:
         diffs = np.diff(strokes_1_indices)
         to_del = []
@@ -153,6 +167,7 @@ def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleto
         if len(to_del) == 0:
             break
 
+    # Assert the diff between to consecutive strokes is below some threshold
     while True:
         diffs = np.diff(strokes_2_indices)
         to_del = []
@@ -165,6 +180,7 @@ def find_strokes_indices(player_1_boxes, player_2_boxes, ball_positions, skeleto
         if len(to_del) == 0:
             break
 
+    # Assume bounces frames are all the other peaks in the y index graph
     bounces_indices = [x for x in peaks if x not in strokes_1_indices]
     if verbose:
         plt.figure()
@@ -185,6 +201,9 @@ def mark_player_box(frame, boxes, frame_num):
 
 
 def mark_skeleton(skeleton_df, img, img_no_frame, frame_number):
+    """
+    Mark the skeleton of the bottom player on the frame
+    """
     # landmarks colors
     circle_color, line_color = (0, 0, 255), (255, 0, 0)
     stickman_pairs = get_stickman_line_connection()
@@ -280,6 +299,7 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
         if skeleton_df is not None:
             img, img_no_frame = mark_skeleton(skeleton_df, img, img_no_frame, frame_number)
 
+        # Add stroke prediction
         for i in range(-10, 10):
             if frame_number + i in strokes_predictions.keys():
                 '''cv2.putText(img, 'STROKE HIT', (200, 200),
@@ -295,7 +315,7 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
 
                 break
-
+        # Add stroke detected
         '''for i in range(-5, 10):
             if frame_number + i in p1:
                 cv2.putText(img, 'Stroke detected', (int(player1_boxes[frame_number][0]) - 10, int(player1_boxes[frame_number][1]) - 10),
@@ -336,12 +356,16 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
 
 
 def create_top_view(court_detector, detection_model):
+    """
+    Creates top view video of the gameplay
+    """
     court = court_detector.court_reference.court.copy()
     court = cv2.line(court, *court_detector.court_reference.net, 255, 5)
     v_width, v_height = court.shape[::-1]
     court = cv2.cvtColor(court, cv2.COLOR_GRAY2BGR)
     out = cv2.VideoWriter('output/top_view.avi',
                           cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), 30, (v_width, v_height))
+    # players location on court
     smoothed_1, smoothed_2 = detection_model.calculate_feet_positions(court_detector)
 
     for feet_pos_1, feet_pos_2 in zip(smoothed_1, smoothed_2):
@@ -418,9 +442,7 @@ def video_process(video_path, show_video=False, include_video=True,
                 pose_extractor.extract_pose(frame, detection_model.player_1_boxes)
 
             ball_detector.detect_ball(court_detector.delete_extra_parts(frame))
-            '''frame[boxes > 0] = 0
-            cv2.imshow('df', frame+boxes)
-            cv2.waitKey(1)'''
+
             total_time += (time.time() - start_time)
             print('Processing frame %d/%d  FPS %04f' % (frame_i, length, frame_i / total_time), '\r', end='')
             if not frame_i % 100:
@@ -477,7 +499,7 @@ def video_process(video_path, show_video=False, include_video=True,
 
 def main():
     s = time.time()
-    video_process(video_path='../videos/vid4.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
+    video_process(video_path='../videos/vid1.mp4', show_video=True, stickman=True, stickman_box=False, smoothing=True,
                   court=True, top_view=True)
     print(f'Total computation time : {time.time() - s} seconds')
 

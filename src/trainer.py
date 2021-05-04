@@ -20,6 +20,9 @@ import pandas as pd
 
 
 class Trainer:
+    """
+    Trainer model for Action Recognition model
+    """
     def __init__(self, model, train_dl, valid_dl, lr=0.001, reg=0.003):
         # Using cuda if possible
         self.dtype = get_dtype()
@@ -135,8 +138,6 @@ class Trainer:
                         torch.save(saved_state, 'saved states/' + self.saved_state_name + '_epoch_' + str(epoch))
                         print(f'*** Saved checkpoint ***')
 
-
-
         time_elapsed = time.time() - start
         print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
         saved_state = dict(model_state=self.model.state_dict(), train_loss=train_loss, train_acc=train_acc,
@@ -183,6 +184,10 @@ def evaluate_performance(model, test_dl):
 
 
 def train_thetis():
+    """
+    Training the model using THETIS dataset
+    """
+
     dtype = get_dtype()
     batch_size = 1
 
@@ -205,6 +210,9 @@ def train_thetis():
 
 
 def train_strokes():
+    """
+    Training the model using Strokes dataset
+    """
     dtype = get_dtype()
     batch_size = 1
     root_dir = '../dataset/my_dataset/patches/'
@@ -227,6 +235,9 @@ def train_strokes():
 
 
 def get_confusion_matrix(model_saved_state, dl=None):
+    """
+    Calculate confusion matrix for the saved model state
+    """
     dtype = get_dtype()
     LSTM = LSTM_model(3, dtype=dtype)
     saved_state = torch.load('saved states/' + model_saved_state, map_location='cpu')

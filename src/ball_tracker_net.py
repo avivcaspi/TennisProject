@@ -1,68 +1,18 @@
 import cv2
-import torchvision
 import torch.nn as nn
 import numpy as np
 import torch
-import torch.optim as optim
 import time
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from src.datasets import TrackNetDataset, get_dataloaders
-from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt
 from torch.optim.adadelta import Adadelta
 
 from src.trainer import plot_graph
 
 import torch.nn.functional as F
-
-
-class WeightedFocalLoss(nn.Module):
-    "Non weighted version of Focal Loss"
-
-    def __init__(self, alpha=.25, gamma=2):
-        super(WeightedFocalLoss, self).__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-
-    def forward(self, inputs, targets):
-        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
-        pt = torch.exp(-ce_loss)
-        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
-        return focal_loss.mean()
-
-
-class FilteredJaccardLoss(nn.Module):
-
-    def forward(self, y_pred: torch.Tensor, y_true: torch.Tensor, ignore_index=255, epsilon=1e-8):
-        """
-        Calculate filtered Jaccard loss
-        :param y_pred: tensor shaped (batch_size x H x W) with probability for each pixel
-        :param y_true: tensor shaped (batch_size x H x W) of true class for each pixel
-        :param ignore_index: index of unlabeled pixels
-        :param epsilon: const for stability
-        :return:
-        """
-
-        if len(y_pred.shape) == 3:
-            softmax = nn.Softmax(dim=1)
-            y_pred = softmax(y_pred)
-            y_pred = y_pred[:, 1, :]
-
-        y_pred = y_pred[y_true != ignore_index]
-        y_true = y_true[y_true != ignore_index]
-
-        if y_true.sum() == 0:
-            i = ((1 - y_true) * (1 - y_pred)).sum().float()
-            u = ((1 - y_true) + (1 - y_pred)).sum().float()
-            loss = 1. - (i / (u - i + epsilon))
-        else:
-            i = (y_true * y_pred).sum().float()
-            u = (y_true + y_pred).sum().float()
-            loss = 1. - (i / (u - i + epsilon))
-
-        return loss
 
 
 class ConvBlock(nn.Module):
@@ -85,9 +35,14 @@ class ConvBlock(nn.Module):
 
 
 class BallTrackerNet(nn.Module):
+    """
+    Deep network for ball detection
+    """
     def __init__(self, out_channels=256, bn=True):
         super().__init__()
         self.out_channels = out_channels
+
+        # Encoder layers
         layer_1 = ConvBlock(in_channels=9, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_2 = ConvBlock(in_channels=64, out_channels=64, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_3 = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -105,6 +60,7 @@ class BallTrackerNet(nn.Module):
         self.encoder = nn.Sequential(layer_1, layer_2, layer_3, layer_4, layer_5, layer_6, layer_7, layer_8, layer_9,
                                      layer_10, layer_11, layer_12, layer_13)
 
+        # Decoder layers
         layer_14 = nn.Upsample(scale_factor=2)
         layer_15 = ConvBlock(in_channels=512, out_channels=256, kernel_size=3, pad=1, bias=True, bn=bn)
         layer_16 = ConvBlock(in_channels=256, out_channels=256, kernel_size=3, pad=1, bias=True, bn=bn)
@@ -151,6 +107,7 @@ class BallTrackerNet(nn.Module):
                 frames = frames.unsqueeze(0)
             if next(self.parameters()).is_cuda:
                 frames.cuda()
+            # Forward pass
             output = self(frames, True)
             output = output.argmax(dim=1).detach().cpu().numpy()
             if self.out_channels == 2:
@@ -159,6 +116,11 @@ class BallTrackerNet(nn.Module):
         return x, y
 
     def get_center_ball(self, output):
+        """
+        Detect the center of the ball using Hough circle transform
+        :param output: output of the network
+        :return: indices of the ball`s center
+        """
         output = output.reshape((360, 640))
 
         # cv2 image must be numpy.uint8, convert numpy.int64 to numpy.uint8
@@ -185,8 +147,14 @@ class BallTrackerNet(nn.Module):
 
 
 def accuracy(y_pred, y_true):
+    """
+    Calculate accuracy of prediction
+    """
+    # Number of correct predictions
     correct = (y_pred == y_true).sum()
+    # Predictions accuracy
     acc = correct / (len(y_pred[0]) * y_pred.shape[0]) * 100
+    # Accuracy of non zero pixels predictions
     non_zero = (y_true > 0).sum()
     non_zero_correct = (y_pred[y_true > 0] == y_true[y_true > 0]).sum()
     if non_zero == 0:
@@ -201,6 +169,9 @@ def accuracy(y_pred, y_true):
 
 
 def show_result(inputs, labels, outputs):
+    """
+    Display network`s predictions results
+    """
     num_classes = outputs.size(1)
     outputs = outputs.argmax(dim=1).detach().cpu().numpy()
     if num_classes == 2:
@@ -219,6 +190,10 @@ def show_result(inputs, labels, outputs):
 
 
 def get_center_ball_dist(output, x_true, y_true, num_classes=256):
+    """
+    Calculate distance of predicted center from the real center
+    Success if distance is less than 5 pixels, fail otherwise
+    """
     max_dist = 5
     success, fail = 0, 0
     dists = []
@@ -227,6 +202,7 @@ def get_center_ball_dist(output, x_true, y_true, num_classes=256):
 
     for i in range(len(x_true)):
         x, y = -1, -1
+        # Reshape output
         cur_output = output[i].reshape((360, 640))
 
         # cv2 image must be numpy.uint8, convert numpy.int64 to numpy.uint8
@@ -274,6 +250,15 @@ def get_center_ball_dist(output, x_true, y_true, num_classes=256):
 
 
 def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch_size=1):
+    """
+    Training TrackNet model
+    :param model_saved_state: saved state of the model
+    :param epochs_num: number of epochs to train
+    :param lr: learning rate
+    :param num_classes: number of output classes of the model
+    :param batch_size: batch size to use for training
+    """
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f'Using device {device}')
     model = BallTrackerNet(out_channels=num_classes, bn=True)
@@ -286,6 +271,7 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
     valid_success_epochs = []
     valid_fail_epochs = []
     total_epochs = 0
+    # Load model if saved state was given
     if model_saved_state is not None:
         saved_state = torch.load(model_saved_state)
         model.load_state_dict(saved_state['model_state'])
@@ -300,11 +286,16 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
         valid_fail_epochs = saved_state['valid_fail']
         print('Loaded saved state')
     model.to(device)
+
+    # DataLoaders
     train_dl, valid_dl = get_dataloaders('../dataset/Dataset/training_model2.csv', root_dir=None, transform=None,
                                          batch_size=batch_size, num_classes=num_classes, dataset_type='tracknet',
                                          num_workers=2)
+    # Loss function
     criterion = nn.CrossEntropyLoss()
+    # Optimizer
     optimizer = Adadelta(model.parameters(), lr=lr)
+    # Scheduler
     lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=8, verbose=True,
                                      min_lr=0.000001)
 
@@ -333,7 +324,7 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
             total_success = 0
             total_fail = 0
             for i, data in enumerate(dl):
-
+                # Clear GPU cache to save space for model and input in the GPU
                 torch.cuda.empty_cache()
                 '''print(f'AllocMem (Mb): '
                       f'{torch.cuda.memory_allocated() / 1024 / 1024}')'''
@@ -350,7 +341,6 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
                 optimizer.zero_grad()
 
                 # forward + backward + optimize
-
                 if phase == 'train':
 
                     outputs = model(inputs)
@@ -369,31 +359,32 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
                 # print statistics
                 running_loss += loss.item() * batch_size
 
+                # Accuracy
                 acc, non_zero_acc, non_zero = accuracy(outputs.argmax(dim=1).detach().cpu().numpy(),
                                                        labels.cpu().numpy())
-
-                if i % 1 == 0:
-                    dists, success, fail = get_center_ball_dist(outputs.argmax(dim=1).detach().cpu().numpy(), x_true,
-                                                                y_true,
-                                                                num_classes=num_classes)
-                    total_success += success
-                    total_fail += fail
-                    for j, dist in enumerate(dists.copy()):
-                        if dist in [-1, -2]:
-                            if dist == -1:
-                                n1 += 1
-                            else:
-                                n2 += 1
-                            dists[j] = np.inf
+                # Prediction dist from real
+                dists, success, fail = get_center_ball_dist(outputs.argmax(dim=1).detach().cpu().numpy(), x_true,
+                                                            y_true,
+                                                            num_classes=num_classes)
+                total_success += success
+                total_fail += fail
+                for j, dist in enumerate(dists.copy()):
+                    if dist in [-1, -2]:
+                        if dist == -1:
+                            n1 += 1
                         else:
-                            running_dist += dist
-                            count += 1
+                            n2 += 1
+                        dists[j] = np.inf
+                    else:
+                        running_dist += dist
+                        count += 1
 
-                    min_dist = min(*dists, min_dist)
+                min_dist = min(*dists, min_dist)
                 running_acc += acc
                 running_no_zero_acc += non_zero_acc
                 running_no_zero += non_zero
 
+                # Display results mid training
                 if (i + 1) % 100 == 0:
                     print('Phase {} Epoch {} Step {} Loss: {:.8f} Acc: {:.4f}%  Non zero acc: {:.4f}%  '
                           'Success acc: {:.2f}% Min Dist: {:.4f} Avg Dist {:.4f}'.format(phase, epoch + 1, i + 1,
@@ -421,6 +412,7 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
 
         total_epochs += 1
         print('Last Epoch time : {:.4f} min'.format((time.time() - start_time) / 60))
+        # Display inference mid training and saving model
         if epoch % 50 == 49:
             inputs, labels = data['frames'], data['gt']
             inputs = inputs.to(device)
@@ -436,6 +428,7 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
                                valid_success=valid_success_epochs, valid_fail=valid_fail_epochs)
             torch.save(saved_state, PATH)
             print(f'*** Saved checkpoint ***')
+    # Saving model`s weights at the end of training
     PATH = f'saved states/tracknet_weights_lr_{lr}_epochs_{total_epochs}.pth'
     saved_state = dict(model_state=model.state_dict(), train_loss=train_losses, train_acc=train_acc,
                        valid_loss=valid_losses, valid_acc=valid_acc, epochs=total_epochs,
@@ -444,6 +437,7 @@ def train(model_saved_state=None, epochs_num=100, lr=1.0, num_classes=256, batch
     torch.save(saved_state, PATH)
     print(f'*** Saved checkpoint ***')
     print('Finished Training')
+    # Plot training results
     plot_graph(train_losses, valid_losses, 'loss', f'../report/tracknet_losses_{total_epochs}_epochs.png')
     plot_graph(train_acc, valid_acc, 'acc', f'../report/tracknet_acc_{total_epochs}_epochs.png')
     plot_graph(

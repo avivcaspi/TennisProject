@@ -35,6 +35,7 @@ class Smooth:
             df = df.fillna(method='ffill')
             df = df.fillna(method='bfill')
 
+            # Detect outliers
             for col in df.columns:
                 df.loc[:, col], detected_outliers = hampel_filter_pandas(df.loc[:, col], self.window_length)
 
@@ -82,6 +83,9 @@ class Smooth:
 
 
 def hampel_filter_pandas(input_series, window_size, n_sigmas=2):
+    """
+    Remove outliers using hamper filter
+    """
     k = 1.4826  # scale factor for Gaussian distribution
     new_series = input_series.copy()
 

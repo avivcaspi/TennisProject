@@ -254,6 +254,9 @@ def video_to_frames(video_filename):
 
 
 def create_train_valid_test_datasets(csv_file, root_dir, transform=None):
+    """
+    Split Thetis dataset into train validation and test sets
+    """
     videos_name = pd.read_csv(csv_file)
     test_player_id = 40
     test_videos_name = videos_name[
@@ -271,6 +274,10 @@ def create_train_valid_test_datasets(csv_file, root_dir, transform=None):
 
 
 def get_dataloaders(csv_file, root_dir, transform, batch_size, dataset_type='stroke', num_classes=256, num_workers=0, seed=42):
+    """
+    Get train and validation dataloader for strokes and tracknet datasets
+    """
+    ds = []
     if dataset_type == 'stroke':
         ds = StrokesDataset(csv_file=csv_file, root_dir=root_dir, transform=transform, train=True, use_features=True)
     elif dataset_type == 'tracknet':

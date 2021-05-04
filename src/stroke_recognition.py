@@ -4,8 +4,6 @@ import imutils
 import torch
 import torchvision
 import numpy as np
-import cv2
-from torch.utils.data import DataLoader
 from torchvision import transforms
 import torch.nn as nn
 from torchvision.transforms import ToTensor
@@ -36,6 +34,9 @@ class FeatureExtractor(nn.Module):
 
 
 class LSTM_model(nn.Module):
+    """
+    Time sequence model for stroke classifying
+    """
     def __init__(self, num_classes, input_size=2048, num_layers=3, hidden_size=90, dtype=torch.cuda.FloatTensor):
         super().__init__()
         self.dtype = dtype
@@ -63,6 +64,9 @@ class LSTM_model(nn.Module):
 
 
 class ActionRecognition:
+    """
+    Stroke recognition model
+    """
     def __init__(self, model_saved_state, max_seq_len=55):
         self.dtype = get_dtype()
         self.feature_extractor = FeatureExtractor()
@@ -72,6 +76,7 @@ class ActionRecognition:
                                               std=[0.229, 0.224, 0.225])
         self.max_seq_len = max_seq_len
         self.LSTM = LSTM_model(3, dtype=self.dtype)
+        # Load model`s weights
         saved_state = torch.load('saved states/' + model_saved_state, map_location='cpu')
         self.LSTM.load_state_dict(saved_state['model_state'])
         self.LSTM.eval()
@@ -82,6 +87,10 @@ class ActionRecognition:
         self.strokes_label = ['Forehand', 'Backhand', 'Service/Smash']
 
     def add_frame(self, frame, player_box):
+        """
+        Extract frame features using feature extractor model and add the results to the frames until now
+        """
+        # ROI is a small box around the player
         box_center = center_of_box(player_box)
         patch = frame[int(box_center[1] - self.box_margin): int(box_center[1] + self.box_margin),
                 int(box_center[0] - self.box_margin): int(box_center[0] + self.box_margin)].copy()
@@ -93,12 +102,16 @@ class ActionRecognition:
             # forward pass
             features = self.feature_extractor(frame_tensor)
         features = features.unsqueeze(1)
+        # Concatenate the features to previous features
         if self.frames_features_seq is None:
             self.frames_features_seq = features
         else:
             self.frames_features_seq = torch.cat([self.frames_features_seq, features], dim=1)
 
     def predict_saved_seq(self, clear=True):
+        """
+        Use saved sequence and predict the stroke
+        """
         with torch.no_grad():
             scores = self.LSTM(self.frames_features_seq)[-1].unsqueeze(0)
             probs = self.softmax(scores).squeeze().cpu().numpy()
@@ -108,6 +121,9 @@ class ActionRecognition:
         return probs, self.strokes_label[np.argmax(probs)]
 
     def predict_stroke(self, frame, player_1_box):
+        """
+        Predict the stroke for each frame
+        """
         box_center = center_of_box(player_1_box)
         patch = frame[int(box_center[1] - self.box_margin): int(box_center[1] + self.box_margin),
                 int(box_center[0] - self.box_margin): int(box_center[0] + self.box_margin)].copy()
@@ -134,6 +150,10 @@ class ActionRecognition:
 
 
 def create_features_from_vids():
+    """
+    Use feature extractor model to create features for each video in the stroke dataset
+    """
+
     dtype = get_dtype()
     feature_extractor = FeatureExtractor()
     feature_extractor.eval()

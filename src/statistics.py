@@ -17,6 +17,9 @@ class Statistics:
         self.bottom_dists_array = None
 
     def get_player_position_heatmap(self, pit_size=80):
+        """
+        Calculate the heatmap of both players positions in the video
+        """
         court_width = self.court_tracker.court_reference.court_total_width
         court_height = self.court_tracker.court_reference.court_total_height
         heatmap_shape = (court_height // pit_size, court_width // pit_size)
@@ -33,6 +36,10 @@ class Statistics:
         return heatmap
 
     def display_heatmap(self, heatmap, image=None, cmap=plt.cm.bwr, title=''):
+        """
+        Display the heatmap on top of an image
+        """
+
         if image is not None:
             h, w = image.shape
 
@@ -61,6 +68,9 @@ class Statistics:
         plt.show()
 
     def get_players_dists(self):
+        """
+        Calculate the distance each player moved
+        """
         top_dist, top_dists_array = calculate_feet_dist(self.feet_top)
         bottom_dist, bottom_dists_array = calculate_feet_dist(self.feet_bottom)
         heatmap = self.get_player_position_heatmap(pit_size=10)
@@ -78,6 +88,10 @@ class Statistics:
 
 
 def calculate_feet_dist(feet_positions, resolution=50):
+    """
+    Calculate feet positions for lower resolution
+    """
+
     feet_positions = feet_positions // resolution
     feet_positions *= resolution
     total_dist = 0

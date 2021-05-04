@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 
 
 class CourtReference:
+    """
+    Court reference model
+    """
     def __init__(self):
         self.baseline_top = ((286, 561), (1379, 561))
         self.baseline_bottom = ((286, 2935), (1379, 2935))
@@ -48,6 +51,9 @@ class CourtReference:
         self.court = cv2.cvtColor(cv2.imread('court_configurations/court_reference.png'), cv2.COLOR_BGR2GRAY)
 
     def build_court_reference(self):
+        """
+        Create court reference image using the lines positions
+        """
         court = np.zeros((self.court_height + 2 * self.top_bottom_border, self.court_width + 2 * self.right_left_border), dtype=np.uint8)
         cv2.line(court, *self.baseline_top, 1, self.line_width)
         cv2.line(court, *self.baseline_bottom, 1, self.line_width)
@@ -65,6 +71,9 @@ class CourtReference:
         return court
 
     def get_important_lines(self):
+        """
+        Returns all lines of the court
+        """
         lines = [*self.baseline_top, *self.baseline_bottom, *self.net, *self.left_court_line, *self.right_court_line,
                  *self.left_inner_line, *self.right_inner_line, *self.middle_line,
                  *self.top_inner_line, *self.bottom_inner_line]
@@ -75,6 +84,9 @@ class CourtReference:
         return parts
 
     def save_all_court_configurations(self):
+        """
+        Create all configurations of 4 points on court reference
+        """
         for i, conf in self.court_conf.items():
             c = cv2.cvtColor(255 - self.court, cv2.COLOR_GRAY2BGR)
             for p in conf:
@@ -82,6 +94,9 @@ class CourtReference:
             cv2.imwrite(f'court_configurations/court_conf_{i}.png', c)
 
     def get_court_mask(self, mask_type=0):
+        """
+        Get mask of the court
+        """
         mask = np.ones_like(self.court)
         if mask_type == 1:  # Bottom half court
             mask[:self.net[0][1] - 1000, :] = 0
