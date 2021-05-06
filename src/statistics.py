@@ -64,6 +64,7 @@ class Statistics:
         # plt.colorbar(im)
         # Add title
 
+        plt.setp(ax, xticks=[], yticks=[])
         # show
         plt.show()
 

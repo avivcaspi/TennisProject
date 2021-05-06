@@ -316,21 +316,21 @@ def add_data_to_video(input_video, court_detector, players_detector, ball_detect
 
                 break
         # Add stroke detected
-        '''for i in range(-5, 10):
-            if frame_number + i in p1:
+        for i in range(-5, 10):
+            '''if frame_number + i in p1:
                 cv2.putText(img, 'Stroke detected', (int(player1_boxes[frame_number][0]) - 10, int(player1_boxes[frame_number][1]) - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255) if i != 0 else (255, 0, 0), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255) if i != 0 else (255, 0, 0), 2)'''
 
             if frame_number + i in p2:
                 cv2.putText(img, 'Stroke detected',
                             (int(f_x(frame_number)) - 30, int(f_y(frame_number)) - 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255) if i != 0 else (255, 0, 0), 2)'''
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255) if i != 0 else (255, 0, 0), 2)
 
         cv2.putText(img, 'Distance: {:.2f} m'.format(player1_dists[frame_number] / 100),
                     (50, 500),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
         cv2.putText(img, 'Distance: {:.2f} m'.format(player2_dists[frame_number] / 100),
-                    (100, 100),
+                    (100, 150),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
         # display frame
@@ -403,7 +403,7 @@ def video_process(video_path, show_video=False, include_video=True,
     court_detector = CourtDetector()
     detection_model = DetectionModel(dtype=dtype)
     pose_extractor = PoseExtractor(person_num=1, box=stickman_box, dtype=dtype) if stickman else None
-    stroke_recognition = ActionRecognition('saved_state_strokes_3e-05_50%_labels')
+    stroke_recognition = ActionRecognition('storke_classifier_weights.pth')
     ball_detector = BallDetector('saved states/tracknet_weights_2_classes.pth', out_channels=2)
 
     # Load videos from videos path

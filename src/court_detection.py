@@ -39,6 +39,7 @@ class CourtDetector:
         self.success_score = 1000
         self.best_conf = None
         self.frame_points = None
+        self.dist = 5
 
     def detect(self, frame, verbose=0):
         """
@@ -363,7 +364,6 @@ class CourtDetector:
         Track court location after detection
         """
         copy = frame.copy()
-        dist = 5
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         if self.frame_points is None:
             conf_points = np.array(self.court_reference.court_conf[self.best_conf], dtype=np.float32).reshape(
@@ -402,8 +402,8 @@ class CourtDetector:
             # Find max intensity pixel near each point
             for p in points_on_line:
                 p = (int(round(p[0])), int(round(p[1])))
-                top_y, top_x = max(p[1] - dist, 0), max(p[0] - dist, 0)
-                bottom_y, bottom_x = min(p[1] + dist, self.v_height), min(p[0] + dist, self.v_width)
+                top_y, top_x = max(p[1] - self.dist, 0), max(p[0] - self.dist, 0)
+                bottom_y, bottom_x = min(p[1] + self.dist, self.v_height), min(p[0] + self.dist, self.v_width)
                 patch = gray[top_y: bottom_y, top_x: bottom_x]
                 y, x = np.unravel_index(np.argmax(patch), patch.shape)
                 if patch[y, x] > 150:
@@ -419,17 +419,23 @@ class CourtDetector:
 
             # if less than 50 points were found detect court from the start instead of tracking
             if len(new_points) < 50:
-                cv2.imshow('court', copy)
-                if cv2.waitKey(0) & 0xff == 27:
-                    cv2.destroyAllWindows()
-                self.detect(frame)
-                conf_points = np.array(self.court_reference.court_conf[self.best_conf], dtype=np.float32).reshape(
-                    (-1, 1, 2))
-                self.frame_points = cv2.perspectiveTransform(conf_points,
-                                                             self.court_warp_matrix[-1]).squeeze().round()
+                if self.dist > 20:
+                    cv2.imshow('court', copy)
+                    if cv2.waitKey(0) & 0xff == 27:
+                        cv2.destroyAllWindows()
+                    self.detect(frame)
+                    conf_points = np.array(self.court_reference.court_conf[self.best_conf], dtype=np.float32).reshape(
+                        (-1, 1, 2))
+                    self.frame_points = cv2.perspectiveTransform(conf_points,
+                                                                 self.court_warp_matrix[-1]).squeeze().round()
 
-                print('Smaller than 50')
-                return
+                    print('Smaller than 50')
+                    return
+                else:
+                    print('Court tracking failed, adding 5 pixels to dist')
+                    self.dist += 5
+                    self.track_court(frame)
+                    return
         # Find transformation from new lines
         i1 = line_intersection(new_lines[0], new_lines[2])
         i2 = line_intersection(new_lines[0], new_lines[3])
