@@ -18,7 +18,7 @@ Example for some tasks completed in this project are:
 8. Calculate statistics of the gameplay of both players including positions heatmap and distance travelled
 
 ## Example
-![alt text](https://github.com/avivcaspi/TennisProject/example_short.gif)
+![alt text](https://github.com/avivcaspi/TennisProject/blob/main/example_short.gif)
 
 ## Requirements
 Python 3.4, OpenCV (cv2), PyTorch and other common packages listed in `requirements.txt` at the [src](https://github.com/avivcaspi/TennisProject/blob/main/src) directory.
