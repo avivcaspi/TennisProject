@@ -3,7 +3,6 @@ torchvision
 imutils
 matplotlib
 pandas
-dlib
 torch
 scipy
 scikit-image
