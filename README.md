@@ -7,6 +7,8 @@ official tennis matches.
 Main paper used for this project is [Vinyes-Mora-S-2018-PhD-Thesis](https://spiral.imperial.ac.uk/handle/10044/1/67949)
 
 ## Project Scope
+This project is mainly focused on official match videos, and camera position and angle as shown in the next section.
+
 Example for some tasks completed in this project are:
 1. Detecting and tracking the tennis court in frame
 2. Detecting and tracking both player in the frame 
@@ -22,3 +24,6 @@ Example for some tasks completed in this project are:
 
 ## Requirements
 Python 3.4, OpenCV (cv2), PyTorch and other common packages listed in `requirements.txt` at the [src](https://github.com/avivcaspi/TennisProject/blob/main/src) directory.
+
+## Entry point
+Entry point for the code is in process.py (scroll to the bottom to see main function video_process(...)).
